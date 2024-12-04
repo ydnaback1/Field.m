@@ -8,9 +8,10 @@
     <title>Field Maps</title>
     <link rel="icon" type="image/svg+xml" href="explore_24dp_FILL0_wght400_GRAD0_opsz24.svg">
     <link rel="stylesheet" href="https://labs.os.uk/public/os-api-branding/v0.3.0/os-api-branding.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol/dist/L.Control.Locate.min.css" />
     <link rel="stylesheet" href="leaflet-measure.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-tilelayer-offline@1.0.1/dist/leaflet-tilelayer-offline.min.css" />
 
     <style>
         body { margin:0; padding:0; }
@@ -21,11 +22,12 @@
 
 <div id="map"></div>
 
-<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.7.0/proj4.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol/dist/L.Control.Locate.min.js" charset="utf-8"></script>
 <script src="leaflet-measure.js"></script>
+<script src="https://unpkg.com/leaflet-tilelayer-offline@1.0.1/dist/leaflet-tilelayer-offline.min.js"></script>
 
 <script>
     var apiKey = 'NAI9sZS6RxIdV4MpIdHfHR9lbQ9OPOwa';
@@ -93,6 +95,27 @@
 
     // Add Layer Control
     L.control.layers(baseMaps).addTo(map);
+
+    // Offline map setup
+    var offlineLayer = L.tileLayer.offline(serviceUrl + '/Outdoor_27700/{z}/{x}/{y}.png?key=' + apiKey, {
+        maxZoom: 22,
+        attribution: '&copy; Ordnance Survey',
+        tileSize: 256,
+        subdomains: 'abc'
+    });
+
+    // Load offline tiles when the map is loaded
+    map.on('load', function() {
+        offlineLayer.addTo(map);
+        offlineLayer.load();
+    });
+
+    // Cache tiles and enable offline functionality
+    var onOfflineReady = function() {
+        offlineLayer.load();
+    };
+
+    map.on('offline', onOfflineReady);
 </script>
 
 </body>
