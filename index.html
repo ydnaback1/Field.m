@@ -18,11 +18,11 @@
     <link rel="stylesheet" href="leaflet-measure.css" />
 
     <!-- Leaflet Offline CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.offline@2.0.0/Leaflet.Offline.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-offline/1.3.1/leaflet.offline.min.css" />
 
     <style>
-        body { margin:0; padding:0; }
-        #map { position:absolute; top:0; bottom:0; width:100%; }
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
     </style>
 </head>
 <body>
@@ -43,7 +43,7 @@
 <script src="leaflet-measure.js"></script>
 
 <!-- Leaflet Offline JavaScript -->
-<script src="https://unpkg.com/leaflet.offline@2.0.0/Leaflet.Offline.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-offline/1.3.1/leaflet.offline.min.js"></script>
 
 <script>
 // Your API key and service URL
@@ -56,10 +56,10 @@ var bngcrs = new L.Proj.CRS('EPSG:27700',
     '+k=0.9996012717 +x_0=400000 +y_0=-100000 ' +
     '+ellps=airy +towgs84=446.448,-125.157,542.06,' +
     '0.15,0.247,0.842,-20.489 +units=m +no_defs', {
-    resolutions: [ 896.0, 448.0, 224.0, 112.0, 56.0,
-                   28.0, 14.0, 7.0, 3.5, 1.75,
-                   0.875, 0.4375, 0.21875, 0.109375 ],
-    origin: [ -238375.0, 1376256.0 ]
+    resolutions: [896.0, 448.0, 224.0, 112.0, 56.0,
+                  28.0, 14.0, 7.0, 3.5, 1.75,
+                  0.875, 0.4375, 0.21875, 0.109375],
+    origin: [-238375.0, 1376256.0]
 });
 
 // Transform coordinates.
@@ -70,13 +70,13 @@ var transformCoords = function(arr) {
 // Initialize the map.
 var mapOptions = {
     crs: bngcrs,
-    center: transformCoords([ 374288, 442016 ]),
+    center: transformCoords([374288, 442016]),
     zoom: 7,
     maxBounds: [
-        transformCoords([ -238375.0, 0.0 ]),
-        transformCoords([ 900000.0, 1376256.0 ])
+        transformCoords([-238375.0, 0.0]),
+        transformCoords([900000.0, 1376256.0])
     ],
-    attributionControl: false // Enable attribution control
+    attributionControl: true // Enable attribution control
 };
 
 var map = L.map('map', mapOptions);
@@ -88,29 +88,18 @@ L.control.locate({
     }
 }).addTo(map);
 
-// Define tile layers using L.tileLayer.offline
-var osroad = L.tileLayer.offline(serviceUrl + '/Road_27700/{z}/{x}/{y}.png?key=' + apiKey, {
-    maxZoom: 22,
-    attribution: '&copy; Ordnance Survey'
-});
-
-var osout = L.tileLayer.offline(serviceUrl + '/Outdoor_27700/{z}/{x}/{y}.png?key=' + apiKey, {
-    maxZoom: 22,
-    attribution: '&copy; Ordnance Survey'
-}).addTo(map);
-
-var osleisure = L.tileLayer.offline(serviceUrl + '/Leisure_27700/{z}/{x}/{y}.png?key=' + apiKey, {
-    maxZoom: 9,
-    attribution: '&copy; Ordnance Survey'
-});
-
 // Function to add offline control to a layer
 function addOfflineControl(layer, layerName) {
+    if (typeof L.tileLayer.offline !== 'function') {
+        console.error('Leaflet Offline is not available.');
+        return;
+    }
+
     var control = L.control.savetiles(layer, {
         position: 'topright',
         saveText: '💾',
         rmText: '🗑️',
-        zoomlevels: [7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22],
+        zoomlevels: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22],
         confirm: function(layer, successCallback) {
             if (confirm("Save " + layer._tilesforSave.length + " tiles for " + layerName + "?")) {
                 successCallback();
@@ -125,10 +114,28 @@ function addOfflineControl(layer, layerName) {
     control.addTo(map);
 }
 
-// Add offline controls for each layer
-addOfflineControl(osroad, 'OS Road');
-addOfflineControl(osout, 'OS Outdoor');
-addOfflineControl(osleisure, 'OS Leisure');
+// Define tile layers
+if (typeof L.tileLayer.offline === 'function') {
+    var osroad = L.tileLayer.offline(serviceUrl + '/Road_27700/{z}/{x}/{y}.png?key=' + apiKey, {
+        maxZoom: 22,
+        attribution: '&copy; Ordnance Survey'
+    });
+
+    var osout = L.tileLayer.offline(serviceUrl + '/Outdoor_27700/{z}/{x}/{y}.png?key=' + apiKey, {
+        maxZoom: 22,
+        attribution: '&copy; Ordnance Survey'
+    }).addTo(map);
+
+    var osleisure = L.tileLayer.offline(serviceUrl + '/Leisure_27700/{z}/{x}/{y}.png?key=' + apiKey, {
+        maxZoom: 9,
+        attribution: '&copy; Ordnance Survey'
+    });
+
+    // Add offline controls for each layer
+    addOfflineControl(osroad, 'OS Road');
+    addOfflineControl(osout, 'OS Outdoor');
+    addOfflineControl(osleisure, 'OS Leisure');
+}
 
 // Base layers
 var baseMaps = {
@@ -151,7 +158,7 @@ measureControl.addTo(map);
 L.control.layers(baseMaps).addTo(map);
 
 // Handle tile load errors
-map.on('tileerror', function(error, tile) {
+map.on('tileerror', function(error) {
     console.error('Tile loading error:', error);
 });
 
