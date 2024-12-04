@@ -88,61 +88,38 @@ L.control.locate({
     }
 }).addTo(map);
 
-// Function to add offline control to a layer
-function addOfflineControl(layer, layerName) {
-    if (typeof L.tileLayer.offline !== 'function') {
-        console.error('Leaflet Offline is not available.');
-        return;
+// Define and validate layers
+function createLayer(url, options) {
+    try {
+        return L.tileLayer.offline(url, options);
+    } catch (error) {
+        console.error('Error creating layer:', error);
+        return null;
     }
-
-    var control = L.control.savetiles(layer, {
-        position: 'topright',
-        saveText: '💾',
-        rmText: '🗑️',
-        zoomlevels: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22],
-        confirm: function(layer, successCallback) {
-            if (confirm("Save " + layer._tilesforSave.length + " tiles for " + layerName + "?")) {
-                successCallback();
-            }
-        },
-        confirmRemoval: function(layer, successCallback) {
-            if (confirm("Remove all saved tiles for " + layerName + "?")) {
-                successCallback();
-            }
-        }
-    });
-    control.addTo(map);
 }
 
-// Define tile layers
-if (typeof L.tileLayer.offline === 'function') {
-    var osroad = L.tileLayer.offline(serviceUrl + '/Road_27700/{z}/{x}/{y}.png?key=' + apiKey, {
-        maxZoom: 22,
-        attribution: '&copy; Ordnance Survey'
-    });
+var osroad = createLayer(serviceUrl + '/Road_27700/{z}/{x}/{y}.png?key=' + apiKey, {
+    maxZoom: 22,
+    attribution: '&copy; Ordnance Survey'
+});
 
-    var osout = L.tileLayer.offline(serviceUrl + '/Outdoor_27700/{z}/{x}/{y}.png?key=' + apiKey, {
-        maxZoom: 22,
-        attribution: '&copy; Ordnance Survey'
-    }).addTo(map);
+var osout = createLayer(serviceUrl + '/Outdoor_27700/{z}/{x}/{y}.png?key=' + apiKey, {
+    maxZoom: 22,
+    attribution: '&copy; Ordnance Survey'
+});
 
-    var osleisure = L.tileLayer.offline(serviceUrl + '/Leisure_27700/{z}/{x}/{y}.png?key=' + apiKey, {
-        maxZoom: 9,
-        attribution: '&copy; Ordnance Survey'
-    });
+var osleisure = createLayer(serviceUrl + '/Leisure_27700/{z}/{x}/{y}.png?key=' + apiKey, {
+    maxZoom: 9,
+    attribution: '&copy; Ordnance Survey'
+});
 
-    // Add offline controls for each layer
-    addOfflineControl(osroad, 'OS Road');
-    addOfflineControl(osout, 'OS Outdoor');
-    addOfflineControl(osleisure, 'OS Leisure');
-}
+if (osout) osout.addTo(map);
 
 // Base layers
-var baseMaps = {
-    'OS Leisure': osleisure,
-    'OS Road': osroad,
-    'OS Outdoor': osout
-};
+var baseMaps = {};
+if (osleisure) baseMaps['OS Leisure'] = osleisure;
+if (osroad) baseMaps['OS Road'] = osroad;
+if (osout) baseMaps['OS Outdoor'] = osout;
 
 // Add measure control
 var measureControl = new L.Control.Measure({
@@ -154,8 +131,10 @@ var measureControl = new L.Control.Measure({
 });
 measureControl.addTo(map);
 
-// Add layer control
-L.control.layers(baseMaps).addTo(map);
+// Add layer control only if layers are defined
+if (Object.keys(baseMaps).length > 0) {
+    L.control.layers(baseMaps).addTo(map);
+}
 
 // Handle tile load errors
 map.on('tileerror', function(error) {
