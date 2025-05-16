@@ -21,8 +21,3 @@ const offlineLayer = getOfflineLayer(CONFIG.serviceUrl, CONFIG.apiKey);
 baseLayers['OS Outdoor'].addTo(map);
 
 addControls(map, baseLayers, offlineLayer);
-
-// Setup offline tile events
-map.on('offline', function() {
-    offlineLayer.load();
-});
