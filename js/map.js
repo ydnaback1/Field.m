@@ -15,13 +15,14 @@ const map = L.map('map', {
 });
 
 const baseLayers = getBaseLayers(CONFIG.serviceUrl, CONFIG.apiKey);
-const offlineLayer = baseLayers['OS Outdoor (Offline)'].addTo(map);
+const offlineLayer = getOfflineLayer(CONFIG.serviceUrl, CONFIG.apiKey);
+
+// Add default layer
+baseLayers['OS Outdoor'].addTo(map);
 
 addControls(map, baseLayers, offlineLayer);
 
-map.on('load', function() {
-    offlineLayer.load();
-});
+// Setup offline tile events
 map.on('offline', function() {
     offlineLayer.load();
 });
