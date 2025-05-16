@@ -1,4 +1,3 @@
-<script>
     const serviceUrl = CONFIG.serviceUrl;
     const apiKey = CONFIG.apiKey;
 
@@ -85,4 +84,3 @@
     };
 
     map.on('offline', onOfflineReady);
-</script>
