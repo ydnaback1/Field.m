@@ -1,6 +1,6 @@
 <script>
-    var apiKey = 'NAI9sZS6RxIdV4MpIdHfHR9lbQ9OPOwa';
-    var serviceUrl = 'https://api.os.uk/maps/raster/v1/zxy';
+    const serviceUrl = CONFIG.serviceUrl;
+    const apiKey = CONFIG.apiKey;
 
     // Setup the EPSG:27700 (British National Grid) projection.
     var bngcrs = new L.Proj.CRS('EPSG:27700', 
