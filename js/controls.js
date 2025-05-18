@@ -1,14 +1,19 @@
-function addControls(map, baseLayers) {
-    // Locate Controle
-    L.control.locate().addTo(map);
+// js/controls.js
 
-    // Measurement Tool (ptma)
+function addUKControls(map, baseLayers) {
+    L.control.locate().addTo(map);
     L.control.measure({
         position: 'topleft',
         collapsed: true,
         color: '#FF0080'
     }).addTo(map);
-    
-    // Base layer Switcher 
     L.control.layers(baseLayers).addTo(map);
+}
+function addWorldControls(map) {
+    L.control.locate().addTo(map);
+    L.control.measure({
+        position: 'topleft',
+        collapsed: true,
+        color: '#3388ff'
+    }).addTo(map);
 }
