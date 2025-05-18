@@ -5,14 +5,10 @@ function addControls(map, baseLayers) {
     // Measurement Tool (ptma)
     L.control.measure({
         position: 'topleft',
-        primaryLengthUnit: 'meters',
-        secondaryLengthUnit: 'kilometers',
-        primaryAreaUnit: 'sqmeters',
-        secondaryAreaUnit: 'hectares',
-        activeColor: '#db4a29',
-        completedColor: '#9b2d14'
+        collapsed: false,
+        color: '#FF0080'
     }).addTo(map);
-
+    
     // Base layer Switcher 
     L.control.layers(baseLayers).addTo(map);
 }
