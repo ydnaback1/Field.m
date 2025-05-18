@@ -54,17 +54,5 @@ var baseMaps = {
     'OS Outdoor': osout
 };
 
-// Add measurement control to the map
-L.control.measure({
-    position: 'topleft', // Position of the control
-    primaryLengthUnit: 'meters', 
-    secondaryLengthUnit: 'kilometers',
-    primaryAreaUnit: 'sqmeters',
-    secondaryAreaUnit: 'hectares',
-    activeColor: '#db4a29',
-    completedColor: '#9b2d14'
-}).addTo(map);
-
-
 // Add Layer Control
 L.control.layers(baseMaps).addTo(map);
