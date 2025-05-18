@@ -54,38 +54,17 @@ var baseMaps = {
     'OS Outdoor': osout
 };
 
-// Add Measure Control
-var measureControl = new L.Control.Measure({
-    position: 'topleft',
-    primaryLengthUnit: 'meters',
+// Add measurement control to the map
+L.control.measure({
+    position: 'topleft', // Position of the control
+    primaryLengthUnit: 'meters', 
     secondaryLengthUnit: 'kilometers',
     primaryAreaUnit: 'sqmeters',
-    secondaryAreaUnit: 'hectares'
-});
-measureControl.addTo(map);
+    secondaryAreaUnit: 'hectares',
+    activeColor: '#db4a29',
+    completedColor: '#9b2d14'
+}).addTo(map);
+
 
 // Add Layer Control
 L.control.layers(baseMaps).addTo(map);
-
-// Disable map interaction while measuring
-map.on('measurestart', function () {
-    map.dragging.disable();
-    map.scrollWheelZoom.disable();
-    map.doubleClickZoom.disable();
-    map.boxZoom.disable();
-    map.keyboard.disable();
-});
-map.on('measurefinish', function () {
-    map.dragging.enable();
-    map.scrollWheelZoom.enable();
-    map.doubleClickZoom.enable();
-    map.boxZoom.enable();
-    map.keyboard.enable();
-});
-
-// Stop control click propagation (avoids scroll jump)
-map.getContainer().addEventListener('mousedown', function (e) {
-    if (e.target.closest('.leaflet-control-measure')) {
-        L.DomEvent.stopPropagation(e);
-    }
-}, true);
