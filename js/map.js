@@ -150,3 +150,11 @@ window.switchMap = function(mode) {
 
 // Ensure globe icon color is correct on initial load
 updateGlobeIcon();
+
+// Log zoom on every zoomend event
+mapUK.on('zoomend', function() {
+    console.log('UK map (EPSG:27700) zoom:', mapUK.getZoom());
+});
+mapWorld.on('zoomend', function() {
+    console.log('Worldwide map (EPSG:3857) zoom:', mapWorld.getZoom());
+});
