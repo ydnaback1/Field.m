@@ -32,6 +32,12 @@ var map = L.map('map', mapOptions);
 // Add locate control
 L.control.locate().addTo(map);
 
+L.control.measure({
+        position: 'topleft',
+        collapsed: false,
+        color: '#FF0080'
+}).addTo(map);
+
 // Define base layers
 var osroad = L.tileLayer(serviceUrl + '/Road_27700/{z}/{x}/{y}.png?key=' + apiKey, {
     maxZoom: 22,
