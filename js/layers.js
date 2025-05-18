@@ -11,9 +11,3 @@ function getBaseLayers(serviceUrl, apiKey) {
         })
     };
 }
-
-function getOfflineLayer(serviceUrl, apiKey) {
-    return L.tileLayer.offline(`${serviceUrl}/Outdoor_27700/{z}/{x}/{y}.png?key=${apiKey}`, {
-        maxZoom: 22,
-    });
-}
