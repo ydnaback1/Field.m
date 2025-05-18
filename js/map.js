@@ -18,3 +18,6 @@ const baseLayers = getBaseLayers(CONFIG.serviceUrl, CONFIG.apiKey);
 
 // Add default layer
 baseLayers['OS Outdoor'].addTo(map);
+
+// Add UI controls
+addControls(map, baseLayers);
