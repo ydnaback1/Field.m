@@ -72,10 +72,10 @@ function updateGlobeIcon() {
   if (!globeButton) return;
   var svg = globeButton.querySelector('svg');
   if (currentMode === 'world') {
-    svg.style.stroke = '#FF0080';
+    svg.style.stroke = '#FF9500';
     globeButton.classList.add('active');
   } else {
-    svg.style.stroke = '#3388ff';
+    svg.style.stroke = '#000000';
     globeButton.classList.remove('active');
   }
 }
