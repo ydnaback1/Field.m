@@ -34,7 +34,7 @@ L.control.locate().addTo(map);
 
 L.control.measure({
         position: 'topleft',
-        collapsed: false,
+        collapsed: true,
         color: '#FF0080'
 }).addTo(map);
 
