@@ -5,7 +5,7 @@ function addControls(map, baseLayers) {
     // Measurement Tool (ptma)
     L.control.measure({
         position: 'topleft',
-        collapsed: false,
+        collapsed: true,
         color: '#FF0080'
     }).addTo(map);
     
