@@ -21,3 +21,21 @@ baseLayers['OS Outdoor'].addTo(map);
 
 // Add UI controls
 addControls(map, baseLayers);
+
+// Disable dragging while measuring
+map.on('measurestart', function () {
+    map.dragging.disable();
+    map.scrollWheelZoom.disable();
+    map.doubleClickZoom.disable();
+    map.boxZoom.disable();
+    map.keyboard.disable();
+});
+
+map.on('measurefinish', function () {
+    map.dragging.enable();
+    map.scrollWheelZoom.enable();
+    map.doubleClickZoom.enable();
+    map.boxZoom.enable();
+    map.keyboard.enable();
+});
+
