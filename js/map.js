@@ -15,9 +15,6 @@ const map = L.map('map', {
 });
 
 const baseLayers = getBaseLayers(CONFIG.serviceUrl, CONFIG.apiKey);
-const offlineLayer = getOfflineLayer(CONFIG.serviceUrl, CONFIG.apiKey);
 
 // Add default layer
 baseLayers['OS Outdoor'].addTo(map);
-
-addControls(map, baseLayers, offlineLayer);
