@@ -3,6 +3,12 @@
 const serviceUrl = CONFIG.serviceUrl;
 const apiKey = CONFIG.apiKey;
 
+// Transform BNG to lat/lon for initial view
+function transformCoords(arr) {
+    return proj4('EPSG:27700', 'EPSG:4326', arr).reverse();
+}
+var ukInitialCenter = transformCoords([374288, 442016]);
+
 var bngcrs = new L.Proj.CRS('EPSG:27700',
     '+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 ' +
     '+ellps=airy +towgs84=446.448,-125.157,542.06,0.15,0.247,0.842,-20.489 +units=m +no_defs', {
@@ -11,15 +17,15 @@ var bngcrs = new L.Proj.CRS('EPSG:27700',
     }
 );
 
-// Initialize both maps (but only one visible at a time)
+// Initialize both maps
 var mapUK = L.map('map-uk', {
     crs: bngcrs,
-    center: [51.5, -0.12],
+    center: ukInitialCenter,
     zoom: 7,
     attributionControl: false
 });
 var mapWorld = L.map('map-world', {
-    center: [51.5, -0.12],
+    center: ukInitialCenter, // Or [51.5, -0.12] or any other initial lat/lon
     zoom: 4,
     attributionControl: false
 });
@@ -45,7 +51,7 @@ var GlobeControl = L.Control.extend({
     var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
     container.title = 'Switch between UK/Worldwide';
     container.innerHTML = `
-      <svg id="globe-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3388ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <svg id="globe-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#222" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10" />
         <ellipse cx="12" cy="12" rx="6" ry="10" />
         <ellipse cx="12" cy="12" rx="10" ry="6" />
@@ -72,10 +78,10 @@ function updateGlobeIcon() {
   if (!globeButton) return;
   var svg = globeButton.querySelector('svg');
   if (currentMode === 'world') {
-    svg.style.stroke = '#FF0080';
+    svg.style.stroke = '#FF9500';
     globeButton.classList.add('active');
   } else {
-    svg.style.stroke = '#3388ff';
+    svg.style.stroke = '#222';
     globeButton.classList.remove('active');
   }
 }
