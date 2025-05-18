@@ -8,12 +8,3 @@ function addControls(map, baseLayers, offlineLayer) {
         secondaryAreaUnit: 'hectares'
     }).addTo(map);
     L.control.layers(baseLayers).addTo(map);
-
-    // Save/remove control for offline tiles
-    L.control.savetiles(offlineLayer, {
-        position: 'topright',
-        saveText: '💾',
-        rmText: '🗑️',
-        zoomLevels: [7, 8, 9, 10]
-    }).addTo(map);
-}
