@@ -1,6 +1,5 @@
 // js/map.js
 
-// UK Projection
 const serviceUrl = CONFIG.serviceUrl;
 const apiKey = CONFIG.apiKey;
 
@@ -12,7 +11,7 @@ var bngcrs = new L.Proj.CRS('EPSG:27700',
     }
 );
 
-// Map Containers
+// Initialize both maps (but only one visible at a time)
 var mapUK = L.map('map-uk', {
     crs: bngcrs,
     center: [51.5, -0.12],
@@ -25,60 +24,88 @@ var mapWorld = L.map('map-world', {
     attributionControl: false
 });
 
-// Basemaps
+// Add base layers
 var ukBaseLayers = getUKBaseLayers(serviceUrl, apiKey);
 ukBaseLayers['OS Road'].addTo(mapUK); // Default
 var worldBaseLayer = getWorldBaseLayer();
 worldBaseLayer.addTo(mapWorld); // Default
 
-// Controls
+// Add controls
 addUKControls(mapUK, ukBaseLayers);
 addWorldControls(mapWorld);
 
-// Initialize sidebar
-var sidebar = L.control.sidebar({
-  container: 'sidebar',
-  position: 'left'
-}).addTo(mapUK); // Attach to UK map by default
+// Track current map mode
+var currentMode = 'uk';
+var globeButton;
 
-sidebar.open('home');
+// Custom Globe Control
+var GlobeControl = L.Control.extend({
+  options: { position: 'topright' },
+  onAdd: function (map) {
+    var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
+    container.title = 'Switch between UK/Worldwide';
+    container.innerHTML = `
+      <svg id="globe-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3388ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <ellipse cx="12" cy="12" rx="6" ry="10" />
+        <ellipse cx="12" cy="12" rx="10" ry="6" />
+      </svg>
+    `;
+    container.onclick = function () {
+      if (currentMode === 'uk') {
+        switchMap('world');
+      } else {
+        switchMap('uk');
+      }
+    };
+    globeButton = container;
+    updateGlobeIcon();
+    return container;
+  }
+});
 
-// Dynamically build sidebar content
-function buildSidebarContent() {
-  var html = `
-    <div class="sidebar-buttons">
-      <h3>UK Basemaps</h3>
-      <button onclick="setUKBaseLayer('OS Road')">OS Road</button>
-      <button onclick="setUKBaseLayer('OS Outdoor')">OS Outdoor</button>
-      <button onclick="setUKBaseLayer('OS Leisure')">OS Leisure</button>
-      <hr>
-      <h3>Map Mode</h3>
-      <button onclick="switchMap('uk')">UK</button>
-      <button onclick="switchMap('world')">Worldwide</button>
-    </div>
-  `;
-  document.getElementById('sidebar-content').innerHTML = html;
+// Add GlobeControl to both maps
+mapUK.addControl(new GlobeControl());
+mapWorld.addControl(new GlobeControl());
+
+function updateGlobeIcon() {
+  if (!globeButton) return;
+  var svg = globeButton.querySelector('svg');
+  if (currentMode === 'world') {
+    svg.style.stroke = '#FF0080';
+    globeButton.classList.add('active');
+  } else {
+    svg.style.stroke = '#3388ff';
+    globeButton.classList.remove('active');
+  }
 }
 
-// Base layer switch for UK
-window.setUKBaseLayer = function(name) {
-  Object.values(ukBaseLayers).forEach(layer => mapUK.removeLayer(layer));
-  ukBaseLayers[name].addTo(mapUK);
-};
-
-// Map mode switch
+// Map mode switch, preserving center/zoom
 window.switchMap = function(mode) {
-  if (mode === 'uk') {
-    document.getElementById('map-uk').style.display = 'block';
-    document.getElementById('map-world').style.display = 'none';
-    sidebar.addTo(mapUK);
-    mapUK.invalidateSize();
+  var center, zoom;
+  if (currentMode === 'uk') {
+    center = mapUK.getCenter();
+    zoom = mapUK.getZoom();
   } else {
+    center = mapWorld.getCenter();
+    zoom = mapWorld.getZoom();
+  }
+
+  if (mode === 'world') {
     document.getElementById('map-uk').style.display = 'none';
     document.getElementById('map-world').style.display = 'block';
-    sidebar.addTo(mapWorld);
+    mapWorld.setView([center.lat, center.lng], zoom);
     mapWorld.invalidateSize();
+    currentMode = 'world';
+  } else {
+    document.getElementById('map-uk').style.display = 'block';
+    document.getElementById('map-world').style.display = 'none';
+    mapUK.setView([center.lat, center.lng], zoom);
+    mapUK.invalidateSize();
+    currentMode = 'uk';
   }
+  updateGlobeIcon();
 };
 
-buildSidebarContent();
+// Ensure globe icon color is correct on initial load
+updateGlobeIcon();
