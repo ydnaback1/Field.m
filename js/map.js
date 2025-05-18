@@ -1,4 +1,8 @@
-const bngCRS = new L.Proj.CRS('EPSG:27700',
+const serviceUrl = CONFIG.serviceUrl;
+const apiKey = CONFIG.apiKey;
+
+// Setup the EPSG:27700 (British National Grid) projection.
+var bngcrs = new L.Proj.CRS('EPSG:27700',
     '+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 ' +
     '+ellps=airy +towgs84=446.448,-125.157,542.06,0.15,0.247,0.842,-20.489 +units=m +no_defs', {
         resolutions: [896.0, 448.0, 224.0, 112.0, 56.0, 28.0, 14.0, 7.0, 3.5, 1.75, 0.875, 0.4375, 0.21875, 0.109375],
@@ -6,23 +10,64 @@ const bngCRS = new L.Proj.CRS('EPSG:27700',
     }
 );
 
-const map = L.map('map', {
-    crs: bngCRS,
+// Transform coordinates.
+var transformCoords = function(arr) {
+    return proj4('EPSG:27700', 'EPSG:4326', arr).reverse();
+};
+
+// Initialize the map.
+var mapOptions = {
+    crs: bngcrs,
     center: transformCoords([374288, 442016]),
     zoom: 7,
-    maxBounds: [transformCoords([-238375.0, 0.0]), transformCoords([900000.0, 1376256.0])],
+    maxBounds: [
+        transformCoords([-238375.0, 0.0]),
+        transformCoords([900000.0, 1376256.0])
+    ],
     attributionControl: false
+};
+
+var map = L.map('map', mapOptions);
+
+// Add locate control
+L.control.locate().addTo(map);
+
+// Define base layers
+var osroad = L.tileLayer(serviceUrl + '/Road_27700/{z}/{x}/{y}.png?key=' + apiKey, {
+    maxZoom: 22,
+    attribution: '&copy; Ordnance Survey'
 });
 
-const baseLayers = getBaseLayers(CONFIG.serviceUrl, CONFIG.apiKey);
-const offlineLayer = getOfflineLayer(CONFIG.serviceUrl, CONFIG.apiKey);
+var osout = L.tileLayer(serviceUrl + '/Outdoor_27700/{z}/{x}/{y}.png?key=' + apiKey, {
+    maxZoom: 22,
+    attribution: '&copy; Ordnance Survey'
+}).addTo(map);
 
-// Add default layer
-baseLayers['OS Outdoor'].addTo(map);
+var osleisure = L.tileLayer(serviceUrl + '/Leisure_27700/{z}/{x}/{y}.png?key=' + apiKey, {
+    maxZoom: 9,
+    attribution: '&copy; Ordnance Survey'
+});
 
-addControls(map, baseLayers, offlineLayer);
+var baseMaps = {
+    'OS Leisure': osleisure,
+    'OS Road': osroad,
+    'OS Outdoor': osout
+};
 
-// Disable interactions while measuring
+// Add Measure Control
+var measureControl = new L.Control.Measure({
+    position: 'topleft',
+    primaryLengthUnit: 'meters',
+    secondaryLengthUnit: 'kilometers',
+    primaryAreaUnit: 'sqmeters',
+    secondaryAreaUnit: 'hectares'
+});
+measureControl.addTo(map);
+
+// Add Layer Control
+L.control.layers(baseMaps).addTo(map);
+
+// Disable map interaction while measuring
 map.on('measurestart', function () {
     map.dragging.disable();
     map.scrollWheelZoom.disable();
@@ -30,7 +75,6 @@ map.on('measurestart', function () {
     map.boxZoom.disable();
     map.keyboard.disable();
 });
-
 map.on('measurefinish', function () {
     map.dragging.enable();
     map.scrollWheelZoom.enable();
@@ -39,7 +83,7 @@ map.on('measurefinish', function () {
     map.keyboard.enable();
 });
 
-// Prevent control clicks from propagating to map
+// Stop control click propagation (avoids scroll jump)
 map.getContainer().addEventListener('mousedown', function (e) {
     if (e.target.closest('.leaflet-control-measure')) {
         L.DomEvent.stopPropagation(e);
