@@ -1,3 +1,5 @@
+// js/map.js
+
 const serviceUrl = CONFIG.serviceUrl;
 const apiKey = CONFIG.apiKey;
 
@@ -10,10 +12,10 @@ var bngcrs = new L.Proj.CRS('EPSG:27700',
     }
 );
 
-// Transform coordinates.
-var transformCoords = function(arr) {
+// Transform coordinates utility.
+function transformCoords(arr) {
     return proj4('EPSG:27700', 'EPSG:4326', arr).reverse();
-};
+}
 
 // Initialize the map.
 var mapOptions = {
@@ -29,36 +31,13 @@ var mapOptions = {
 
 var map = L.map('map', mapOptions);
 
-// Add locate control
-L.control.locate().addTo(map);
+// Get base layers from layers.js (imported in your HTML before this file)
+var baseLayers = getBaseLayers(serviceUrl, apiKey);
 
-L.control.measure({
-        position: 'topleft',
-        collapsed: true,
-        color: '#FF0080'
-}).addTo(map);
+// Add default base layer (OS Outdoor) to map
+baseLayers['OS Outdoor'].addTo(map);
 
-// Define base layers
-var osroad = L.tileLayer(serviceUrl + '/Road_27700/{z}/{x}/{y}.png?key=' + apiKey, {
-    maxZoom: 22,
-    attribution: '&copy; Ordnance Survey'
-});
+// Add controls using controls.js
+addControls(map, baseLayers);
 
-var osout = L.tileLayer(serviceUrl + '/Outdoor_27700/{z}/{x}/{y}.png?key=' + apiKey, {
-    maxZoom: 22,
-    attribution: '&copy; Ordnance Survey'
-}).addTo(map);
 
-var osleisure = L.tileLayer(serviceUrl + '/Leisure_27700/{z}/{x}/{y}.png?key=' + apiKey, {
-    maxZoom: 9,
-    attribution: '&copy; Ordnance Survey'
-});
-
-var baseMaps = {
-    'OS Leisure': osleisure,
-    'OS Road': osroad,
-    'OS Outdoor': osout
-};
-
-// Add Layer Control
-L.control.layers(baseMaps).addTo(map);
