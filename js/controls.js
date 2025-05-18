@@ -8,3 +8,4 @@ function addControls(map, baseLayers, offlineLayer) {
         secondaryAreaUnit: 'hectares'
     }).addTo(map);
     L.control.layers(baseLayers).addTo(map);
+}
