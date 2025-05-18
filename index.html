@@ -7,47 +7,36 @@
   <!-- Favicon & Styles -->
   <link rel="icon" type="image/svg+xml" href="explore_24dp_FILL0_wght400_GRAD0_opsz24.svg" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-sidebar-v2/css/leaflet-sidebar.min.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.78.0/dist/L.Control.Locate.min.css" />
   <link rel="stylesheet" href="plugins/leaflet-measure/leaflet.measure.css" />
   <style>
     body { margin:0; padding:0; }
     #map-uk, #map-world { width:100vw; height:100vh; }
     #map-world { display: none; }
-    .leaflet-sidebar { z-index: 1000; }
-    .sidebar-buttons button { margin: 0.2em 0; width: 100%; }
+    .leaflet-control-custom {
+      background: white;
+      width: 34px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border-radius: 4px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    }
+    .leaflet-control-custom.active {
+      background: #e8f0fe !important;
+    }
+    .leaflet-control-custom svg {
+      transition: stroke 0.2s;
+    }
   </style>
 </head>
 <body>
-  <!-- Sidebar -->
-  <div id="sidebar" class="leaflet-sidebar collapsed">
-    <!-- Sidebar Tabs -->
-    <div class="leaflet-sidebar-tabs">
-      <ul role="tablist">
-        <li><a href="#home" role="tab"><i class="fa fa-bars"></i></a></li>
-      </ul>
-    </div>
-    <!-- Sidebar Content -->
-    <div class="leaflet-sidebar-content">
-      <div class="leaflet-sidebar-pane" id="home">
-        <h1 class="leaflet-sidebar-header">
-          Map Options
-          <span class="leaflet-sidebar-close"><i class="fa fa-caret-left"></i></span>
-        </h1>
-        <div id="sidebar-content">
-          <!-- Sidebar content is built dynamically by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Two map containers (only one visible at a time) -->
   <div id="map-uk"></div>
   <div id="map-world"></div>
 
-  <!-- Scripts -->
   <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-sidebar-v2/js/leaflet-sidebar.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.7.0/proj4.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.78.0/dist/L.Control.Locate.min.js"></script>
