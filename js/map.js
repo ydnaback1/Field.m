@@ -46,28 +46,41 @@ addWorldControls(mapWorld);
 // Zoom level lookup tables for smooth switching
 function getEquivalentWorldZoom(bngZoom) {
   const match = {
-    7: 5,
-    8: 6,
-    9: 7,
-    10: 8,
-    11: 9,
-    12: 10,
-    13: 11
+    0: 7,
+    1: 8,
+    2: 9,
+    3: 10,
+    4: 11,
+    5: 12,
+    6: 13,
+    7: 14,
+    8: 15,
+    9: 16,
+    10: 17,
+    11: 18,
+    12: 18 // Cap at OSM max
   };
-  return match[bngZoom] || 5; // fallback
+  return match[bngZoom] || 9; // Fallback
 }
+
 function getEquivalentUKZoom(osmZoom) {
   const match = {
-    5: 7,
-    6: 8,
-    7: 9,
-    8: 10,
-    9: 11,
-    10: 12,
-    11: 13
+    7: 0,
+    8: 1,
+    9: 2,
+    10: 3,
+    11: 4,
+    12: 5,
+    13: 6,
+    14: 7,
+    15: 8,
+    16: 9,
+    17: 10,
+    18: 12
   };
-  return match[osmZoom] || 7; // fallback
+  return match[osmZoom] || 7; // Fallback
 }
+
 
 // Track current map mode
 var currentMode = 'uk';
