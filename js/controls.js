@@ -1,5 +1,8 @@
-function addControls(map, baseLayers, offlineLayer) {
+function addControls(map, baseLayers) {
+    // Locate Controle
     L.control.locate().addTo(map);
+
+    // Measure Tool
     new L.Control.Measure({
         position: 'topleft',
         primaryLengthUnit: 'meters',
@@ -7,5 +10,7 @@ function addControls(map, baseLayers, offlineLayer) {
         primaryAreaUnit: 'sqmeters',
         secondaryAreaUnit: 'hectares'
     }).addTo(map);
+
+    // Base layer Switcher 
     L.control.layers(baseLayers).addTo(map);
 }
