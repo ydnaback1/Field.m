@@ -15,14 +15,14 @@ const map = L.map('map', {
 });
 
 const baseLayers = getBaseLayers(CONFIG.serviceUrl, CONFIG.apiKey);
+const offlineLayer = getOfflineLayer(CONFIG.serviceUrl, CONFIG.apiKey);
 
 // Add default layer
 baseLayers['OS Outdoor'].addTo(map);
 
-// Add UI controls
-addControls(map, baseLayers);
+addControls(map, baseLayers, offlineLayer);
 
-// Disable dragging while measuring
+// Disable interactions while measuring
 map.on('measurestart', function () {
     map.dragging.disable();
     map.scrollWheelZoom.disable();
@@ -39,3 +39,9 @@ map.on('measurefinish', function () {
     map.keyboard.enable();
 });
 
+// Prevent control clicks from propagating to map
+map.getContainer().addEventListener('mousedown', function (e) {
+    if (e.target.closest('.leaflet-control-measure')) {
+        L.DomEvent.stopPropagation(e);
+    }
+}, true);
