@@ -80,7 +80,7 @@ html, body {
 #route-info {
   position: absolute;
   left: 50%;
-  top: 24px; /* distance from top, adjust as needed */
+  top: 24px;
   transform: translateX(-50%);
   background: rgba(255,255,255,0.97);
   border-radius: 6px;
@@ -96,6 +96,7 @@ html, body {
   text-align: center;
 }
 
+/* --- Layer Selector Icon and NO Blue Line --- */
 .leaflet-control-layers-toggle {
   background-image: none !important;
   display: flex !important;
@@ -104,7 +105,8 @@ html, body {
   border-radius: 6px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.13);
   position: relative;
-  color: #000;
+  color: #000 !important;
+  border: none !important;
 }
 
 .leaflet-control-layers-toggle::before {
@@ -124,15 +126,18 @@ html, body {
 .leaflet-control-layers-expanded .leaflet-control-layers-toggle {
   background: none !important;
   box-shadow: none !important;
+  border: none !important;
 }
 
 .leaflet-control-layers-toggle,
 .leaflet-control-layers-toggle:focus,
 .leaflet-control-layers-toggle:active,
 .leaflet-control-layers-toggle:hover {
+  color: transparent !important;   
   border: none !important;
   border-bottom: none !important;
   box-shadow: none !important;
   outline: none !important;
   background-image: none !important;
 }
+
