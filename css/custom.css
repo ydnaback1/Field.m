@@ -93,38 +93,31 @@ html, body {
   min-width: 180px;
   pointer-events: none;
   display: none;
+  text-allign: center;
 }
 
 .leaflet-control-layers-toggle {
   background-image: none !important;
-  background-color: white !important;
   display: flex !important;
   align-items: center;
   justify-content: center;
   border-radius: 6px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.13);
-  width: 34px !important;
-  height: 34px !important;
   position: relative;
+  color: #000;
 }
-.leaflet-control-layers-toggle:focus,
-.leaflet-control-layers-toggle:active {
-  outline: none !important;
-  box-shadow: none !important;
-  border-bottom: none !important;
-}
+
 .leaflet-control-layers-toggle::before {
   font-family: "Font Awesome 6 Free";
-  font-weight: 900;
+  font-weight: 400; /* 400 = regular, 900 = solid */
   content: "\f5fd";
   font-size: 1.8em;
-  color: #000;
+  color: inherit; /* Use whatever color the link has */
   display: block;
   line-height: 1;
   margin: auto;
-  text-decoration: none !important;
-  border-bottom: none !important;
 }
+
 .leaflet-control-layers-expanded .leaflet-control-layers-toggle::before {
   display: none !important;
 }
