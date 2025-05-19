@@ -21,6 +21,51 @@ body { margin:0; padding:0; }
   transition: stroke 0.2s;
 }
 
+/* Scale bar transparent for cleaner look */
 .leaflet-control-scale-line {
   background: transparent !important;
+}
+
+/* Route UI and button positioning and style */
+#toggle-route-ui {
+  position: absolute;
+  top: 65px;
+  right: 10px;
+  z-index: 1201;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  padding: 4px 12px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.13);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+#route-ui {
+  position: absolute;
+  top: 110px; /* 65px for button + 45px gap (adjust for your layout) */
+  right: 10px;
+  z-index: 1200;
+  background: rgba(255,255,255,0.96);
+  padding: 6px 8px;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.13);
+  border: 1px solid #bbb;
+  display: none; /* hidden by default, toggled with button */
+  flex-direction: row;
+  gap: 4px;
+  align-items: center;
+}
+
+#route-list, #load-route, #delete-route {
+  height: 32px;
+}
+
+#route-ui select, #route-ui button {
+  font-size: 15px;
+  border-radius: 4px;
+  border: 1px solid #bbb;
 }
