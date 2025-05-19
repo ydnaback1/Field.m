@@ -12,7 +12,8 @@ function addUKControls(map, baseLayers) {
         position: 'bottomleft',
         imperial: false, 
         metric: true,
-        maxWidth: 200
+        maxWidth: 200,
+        background: '#00FFFFFF',
     }).addTo(map);
 }
 
