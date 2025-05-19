@@ -107,14 +107,29 @@ html, body {
   height: 34px !important;
   position: relative;
 }
+.leaflet-control-layers-toggle:focus,
+.leaflet-control-layers-toggle:active {
+  outline: none !important;
+  box-shadow: none !important;
+  border-bottom: none !important;
+}
 .leaflet-control-layers-toggle::before {
   font-family: "Font Awesome 6 Free";
   font-weight: 900;
-  content: "\f5fd"; /* fa-layer-group */
-  font-size: 1.4em;
+  content: "\f5fd";
+  font-size: 1.8em;
   color: #000;
   display: block;
   line-height: 1;
   margin: auto;
+  text-decoration: none !important;
+  border-bottom: none !important;
+}
+.leaflet-control-layers-expanded .leaflet-control-layers-toggle::before {
+  display: none !important;
+}
+.leaflet-control-layers-expanded .leaflet-control-layers-toggle {
+  background: none !important;
+  box-shadow: none !important;
 }
 
