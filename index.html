@@ -8,27 +8,23 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.78.0/dist/L.Control.Locate.min.css" />
   <link rel="stylesheet" href="plugins/leaflet-measure/leaflet.measure.css" />
-  <!-- Leaflet.draw CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css" />
-  <link rel="stylesheet" href="custom.css" />
+  <link rel="stylesheet" href="css/custom.css" />
 </head>
 <body>
   <!-- Routes toggle button -->
-  <button id="toggle-route-ui" title="Show/hide saved routes"
-    style="position:absolute;top:65px;right:10px;z-index:1201;display:flex;align-items:center;justify-content:center;border:1px solid #bbb;border-radius:6px;padding:4px 12px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,0.13);">
+  <button id="toggle-route-ui" title="Show/hide saved routes">
     <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px;">
       <polyline points="6 9 12 15 18 9"></polyline>
     </svg>
     Routes
   </button>
-
   <!-- Route UI, hidden by default -->
   <div id="route-ui">
     <select id="route-list"></select>
     <button id="load-route">Load</button>
     <button id="delete-route">Delete</button>
   </div>
-
   <div id="map-uk"></div>
   <div id="map-world"></div>
 
@@ -37,7 +33,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.78.0/dist/L.Control.Locate.min.js"></script>
   <script src="plugins/leaflet-measure/leaflet.measure.js"></script>
-  <!-- Leaflet.draw JS -->
   <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
   <script src="config.js"></script>
   <script src="js/layers.js"></script>
