@@ -41,6 +41,15 @@ html, body {
 }
 .route-panel-icon {
   align-self: flex-end;
+  background: white;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.13);
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 5px;
 }
 .route-panel {
   min-width: 100px;
