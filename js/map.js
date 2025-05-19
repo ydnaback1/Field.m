@@ -73,7 +73,7 @@ ukBaseLayers['OS Road'].addTo(mapUK);
 var worldBaseLayer = getWorldBaseLayer();
 worldBaseLayer.addTo(mapWorld);
 
-// Add other controls (NOT draw or globe here)
+// Add other controls (layers, globe, etc) via controls.js
 addUKControls(mapUK, ukBaseLayers);
 addWorldControls(mapWorld);
 
@@ -107,20 +107,14 @@ const worldDrawOpts = {
   }
 };
 
-// Create controls (but only add to visible map)
-const GlobeSwitcherUK = new GlobeSwitcherControl({ position: 'topright' });
-const GlobeSwitcherWorld = new GlobeSwitcherControl({ position: 'topright' });
-
+// Create Route controls (add AFTER addUKControls/addWorldControls for correct stacking)
 const RouteControlUK = new (window.makeRouteControl(mapUK, 'uk', window.routeLayerUK, ukDrawOpts))();
 const RouteControlWorld = new (window.makeRouteControl(mapWorld, 'world', window.routeLayerWorld, worldDrawOpts))();
 
-// Initially show only on the visible map
 if (currentMode === 'world') {
   mapWorld.addControl(RouteControlWorld);
-  mapWorld.addControl(GlobeSwitcherWorld);
 } else {
   mapUK.addControl(RouteControlUK);
-  mapUK.addControl(GlobeSwitcherUK);
 }
 
 // Route event handlers
@@ -177,11 +171,9 @@ function saveMapState() {
 mapUK.on('moveend zoomend', saveMapState);
 mapWorld.on('moveend zoomend', saveMapState);
 
-// --- FIX: Remove draw toolbar if open before switching maps ---
+// --- Remove draw toolbar if open before switching maps ---
 window.switchMap = function(mode) {
   var center, zoom;
-
-  // Remove any open draw tool on current map before switching
   if (window.activeDrawControl && window.activeDrawMap) {
     window.activeDrawMap.removeControl(window.activeDrawControl);
     window.activeDrawControl = null;
@@ -192,13 +184,11 @@ window.switchMap = function(mode) {
     center = mapUK.getCenter();
     zoom = mapUK.getZoom();
     mapUK.removeControl(RouteControlUK);
-    mapUK.removeControl(GlobeSwitcherUK);
     if (mode === 'world') zoom = getEquivalentWorldZoom(zoom);
   } else {
     center = mapWorld.getCenter();
     zoom = mapWorld.getZoom();
     mapWorld.removeControl(RouteControlWorld);
-    mapWorld.removeControl(GlobeSwitcherWorld);
     if (mode === 'uk') zoom = getEquivalentUKZoom(zoom);
   }
 
@@ -209,7 +199,6 @@ window.switchMap = function(mode) {
     mapWorld.invalidateSize();
     currentMode = 'world';
     mapWorld.addControl(RouteControlWorld);
-    mapWorld.addControl(GlobeSwitcherWorld);
   } else {
     document.getElementById('map-uk').style.display = 'block';
     document.getElementById('map-world').style.display = 'none';
@@ -217,7 +206,6 @@ window.switchMap = function(mode) {
     mapUK.invalidateSize();
     currentMode = 'uk';
     mapUK.addControl(RouteControlUK);
-    mapUK.addControl(GlobeSwitcherUK);
   }
   updateGlobeIcon();
   saveMapState();
@@ -227,14 +215,16 @@ window.switchMap = function(mode) {
 function updateGlobeIcon() {
   var globeControl = document.querySelector('.globe-btn');
   if (!globeControl) return;
-  var svg = globeControl.querySelector('svg');
+  var svg = globeControl.querySelector('svg, i.fas.fa-globe');
   if (!svg) return;
   if (currentMode === 'world') {
     globeControl.classList.add('active');
-    svg.style.stroke = '#FF9500';
+    if (svg.tagName === 'svg') svg.style.stroke = '#FF9500';
+    else svg.style.color = '#FF9500';
   } else {
     globeControl.classList.remove('active');
-    svg.style.stroke = '#000000';
+    if (svg.tagName === 'svg') svg.style.stroke = '#000000';
+    else svg.style.color = '#000000';
   }
 }
 
