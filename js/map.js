@@ -3,6 +3,44 @@
 // EPSG:27700 for Proj4js coordinate transforms
 proj4.defs("EPSG:27700", "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +ellps=airy +towgs84=446.448,-125.157,542.06,0.15,0.247,0.842,-20.489 +units=m +no_defs");
 
+// Zoom Lookup Table
+function getEquivalentWorldZoom(bngZoom) {
+  const match = {
+    0: 7,
+    1: 8,
+    2: 9,
+    3: 10,
+    4: 11,
+    5: 12,
+    6: 13,
+    7: 14,
+    8: 15,
+    9: 16,
+    10: 17,
+    11: 18,
+    12: 18 // Cap at OSM max
+  };
+  return match[bngZoom] || 9; // Fallback
+}
+
+function getEquivalentUKZoom(osmZoom) {
+  const match = {
+    7: 0,
+    8: 1,
+    9: 2,
+    10: 3,
+    11: 4,
+    12: 5,
+    13: 6,
+    14: 7,
+    15: 8,
+    16: 9,
+    17: 10,
+    18: 11
+  };
+  return match[osmZoom] || 7; // Fallback
+}
+
 // Transform BNG to WGS84 for initial center
 function transformCoords(arr) {
     return proj4('EPSG:27700', 'EPSG:4326', arr).reverse();
