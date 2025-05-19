@@ -1,6 +1,5 @@
 // js/controls.js
 
-// Modular Globe Switcher Control
 function GlobeSwitcherControl() {}
 GlobeSwitcherControl.prototype = Object.create(L.Control.prototype);
 GlobeSwitcherControl.prototype.onAdd = function(map) {
@@ -26,8 +25,7 @@ GlobeSwitcherControl.prototype.onAdd = function(map) {
 
 function addUKControls(map, baseLayers) {
     L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map); // Basemap selector (top)
-    map.addControl(new GlobeSwitcherControl({ position: 'topright' }));      // Globe under layers
-    // Route controls handled in map.js
+    // Globe control handled in map.js so it's never duplicated
     L.control.locate().addTo(map);
     L.control.measure({
         position: 'topleft',
@@ -42,7 +40,7 @@ function addUKControls(map, baseLayers) {
     }).addTo(map);
 }
 function addWorldControls(map) {
-    // No need to duplicate Globe or layers here; added on visible map only
+    // No need to duplicate Globe or layers here; handled in map.js
     L.control.locate().addTo(map);
     L.control.measure({
         position: 'topleft',
