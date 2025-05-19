@@ -17,6 +17,14 @@ function saveRouteToList(mode, name, layer) {
     localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
 }
 
+function updateRouteInList(mode, idx, geojson) {
+    let arr = getRouteList(mode);
+    if (arr[idx]) {
+        arr[idx].geojson = geojson;
+        localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
+    }
+}
+
 function deleteRouteFromList(mode, index) {
     let arr = getRouteList(mode);
     arr.splice(index, 1);
@@ -37,6 +45,8 @@ function updateRouteListUI(mode) {
 }
 
 // -------- Loading & Fitting --------
+window.currentRouteIndex = { uk: null, world: null };
+
 function loadRouteByIndex(mode, idx) {
     const routes = getRouteList(mode);
     if (!routes[idx]) return;
@@ -50,10 +60,12 @@ function loadRouteByIndex(mode, idx) {
         window.routeLayerUK.clearLayers();
         layer.eachLayer(l => window.routeLayerUK.addLayer(l));
         if (layer.getBounds().isValid()) mapUK.fitBounds(layer.getBounds());
+        window.currentRouteIndex.uk = Number(idx);
     } else {
         window.routeLayerWorld.clearLayers();
         layer.eachLayer(l => window.routeLayerWorld.addLayer(l));
         if (layer.getBounds().isValid()) mapWorld.fitBounds(layer.getBounds());
+        window.currentRouteIndex.world = Number(idx);
     }
 }
 
@@ -74,11 +86,17 @@ function setupRouteUI() {
         updateRouteListUI(window.currentMode);
         if (window.currentMode === 'uk') window.routeLayerUK.clearLayers();
         else window.routeLayerWorld.clearLayers();
+        // Clear currentRouteIndex as route is deleted
+        if (window.currentMode === 'uk') window.currentRouteIndex.uk = null;
+        else window.currentRouteIndex.world = null;
     };
 }
 
 // Expose for use elsewhere
 window.getRouteList = getRouteList;
 window.saveRouteToList = saveRouteToList;
+window.updateRouteInList = updateRouteInList;
+window.deleteRouteFromList = deleteRouteFromList;
 window.updateRouteListUI = updateRouteListUI;
+window.loadRouteByIndex = loadRouteByIndex;
 window.setupRouteUI = setupRouteUI;
