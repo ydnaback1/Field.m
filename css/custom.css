@@ -1,16 +1,29 @@
-body { margin:0; padding:0; }
-#map-uk, #map-world { width:100vw; height:100vh; }
+html, body {
+  width: 100vw;
+  height: 100vh;
+  min-width: 100vw;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  background: #eef;
+}
+#map-uk, #map-world {
+  width: 100vw;
+  height: 100vh;
+  min-width: 100vw;
+  min-height: 100vh;
+  position: absolute;
+  top: 0; left: 0;
+}
 #map-world { display: none; }
 
-
-.leaflet-control-custom,
-.leaflet-control {
+.leaflet-control-custom {
   background: white;
   box-shadow: 0 1px 4px rgba(0,0,0,0.13);
   border-radius: 6px;
   width: 34px;
   height: 34px;
-  display: flex !important;
+  display: flex;
   align-items: center;
   justify-content: center;
 }
@@ -20,6 +33,11 @@ body { margin:0; padding:0; }
 }
 .leaflet-control-custom i.fas.fa-globe {
   font-size: 1.5em;
+}
+.route-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
 }
 .route-panel-icon {
   align-self: flex-end;
