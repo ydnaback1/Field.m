@@ -1,5 +1,3 @@
-// js/controls.js
-
 function addUKControls(map, baseLayers) {
     L.control.locate().addTo(map);
     L.control.measure({
@@ -15,8 +13,9 @@ function addUKControls(map, baseLayers) {
         maxWidth: 200
     }).addTo(map);
 
-    // Draw control for polylines (walking routes)
+    // Draw control for polylines (walking routes) - top right
     var drawControl = new L.Control.Draw({
+        position: 'topright',
         draw: {
             polyline: { shapeOptions: { color: "#FF9500", weight: 5 } },
             polygon: false,
@@ -45,6 +44,7 @@ function addWorldControls(map) {
     }).addTo(map);
 
     var drawControl = new L.Control.Draw({
+        position: 'topright',
         draw: {
             polyline: { shapeOptions: { color: "#3388ff", weight: 5 } },
             polygon: false,
