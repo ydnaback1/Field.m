@@ -202,8 +202,14 @@ window.switchMap = function(mode) {
 // ------- [Setup Route UI on page load] -------
 setupRouteUI();
 
-// Map mode switch, preserving center/zoom with equivalent zoom conversion
-// (No changes to main logic needed here, already modular!)
+// --- Route UI Toggle Logic ---
+const toggleBtn = document.getElementById('toggle-route-ui');
+const routeUI = document.getElementById('route-ui');
+let routeUIVisible = false;
+toggleBtn.onclick = function() {
+    routeUIVisible = !routeUIVisible;
+    routeUI.style.display = routeUIVisible ? "flex" : "none";
+};
 
 // === [REMEMBER: Set initial mode on load] ===
 if (currentMode === 'world') {
