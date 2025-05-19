@@ -109,10 +109,10 @@ html, body {
 
 .leaflet-control-layers-toggle::before {
   font-family: "Font Awesome 6 Free";
-  font-weight: 900; /* 400 = regular, 900 = solid */
+  font-weight: 900;
   content: "\f5fd";
   font-size: 1.8em;
-  color: inherit; /* Use whatever color the link has */
+  color: #000; 
   display: block;
   line-height: 1;
   margin: auto;
