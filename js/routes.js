@@ -1,6 +1,5 @@
 // js/routes.js
 
-// -------- Data Helpers --------
 function getRouteList(mode) {
     const key = 'routeList_' + mode;
     let arr = [];
@@ -31,10 +30,10 @@ function deleteRouteFromList(mode, index) {
     localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
 }
 
-// -------- UI Management --------
 function updateRouteListUI(mode) {
-    const list = document.getElementById('route-list');
+    const list = document.getElementById(`route-list-${mode}`);
     const routes = getRouteList(mode);
+    if (!list) return;
     list.innerHTML = '';
     routes.forEach((r, i) => {
         let option = document.createElement('option');
@@ -44,7 +43,6 @@ function updateRouteListUI(mode) {
     });
 }
 
-// -------- Loading & Fitting --------
 window.currentRouteIndex = { uk: null, world: null };
 
 function loadRouteByIndex(mode, idx) {
@@ -69,34 +67,9 @@ function loadRouteByIndex(mode, idx) {
     }
 }
 
-// -------- Event Setup --------
-function setupRouteUI() {
-    // On Load
-    updateRouteListUI(window.currentMode);
-
-    document.getElementById('load-route').onclick = function() {
-        const idx = document.getElementById('route-list').value;
-        if (idx === '' || idx === null) return;
-        loadRouteByIndex(window.currentMode, idx);
-    };
-    document.getElementById('delete-route').onclick = function() {
-        const idx = document.getElementById('route-list').value;
-        if (idx === '' || idx === null) return;
-        deleteRouteFromList(window.currentMode, idx);
-        updateRouteListUI(window.currentMode);
-        if (window.currentMode === 'uk') window.routeLayerUK.clearLayers();
-        else window.routeLayerWorld.clearLayers();
-        // Clear currentRouteIndex as route is deleted
-        if (window.currentMode === 'uk') window.currentRouteIndex.uk = null;
-        else window.currentRouteIndex.world = null;
-    };
-}
-
-// Expose for use elsewhere
 window.getRouteList = getRouteList;
 window.saveRouteToList = saveRouteToList;
 window.updateRouteInList = updateRouteInList;
 window.deleteRouteFromList = deleteRouteFromList;
 window.updateRouteListUI = updateRouteListUI;
 window.loadRouteByIndex = loadRouteByIndex;
-window.setupRouteUI = setupRouteUI;
