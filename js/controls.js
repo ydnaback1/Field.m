@@ -24,9 +24,8 @@ GlobeSwitcherControl.prototype.onAdd = function(map) {
 
 function addUKControls(map, baseLayers) {
     L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map);
-    // Add globe control here for stacking order
     map.addControl(new GlobeSwitcherControl({ position: 'topright' }));
-    // Route control is handled in map.js after
+    // Route control is handled separately in map.js
     L.control.locate().addTo(map);
     L.control.measure({
         position: 'topleft',
@@ -41,6 +40,8 @@ function addUKControls(map, baseLayers) {
     }).addTo(map);
 }
 function addWorldControls(map) {
+    map.addControl(new GlobeSwitcherControl({ position: 'topright' }));
+    // Route control is handled separately in map.js
     L.control.locate().addTo(map);
     L.control.measure({
         position: 'topleft',
