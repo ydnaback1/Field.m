@@ -5,13 +5,12 @@ GlobeSwitcherControl.prototype = Object.create(L.Control.prototype);
 GlobeSwitcherControl.prototype.onAdd = function(map) {
   var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom globe-btn');
   container.title = 'Switch between UK and Worldwide';
-  container.innerHTML = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="10"/>
-      <ellipse cx="12" cy="12" rx="6" ry="10"/>
-      <ellipse cx="12" cy="12" rx="10" ry="6"/>
-    </svg>
-  `;
+  container.style.width = '34px';
+  container.style.height = '34px';
+  container.style.display = 'flex';
+  container.style.alignItems = 'center';
+  container.style.justifyContent = 'center';
+  container.innerHTML = `<i class="fas fa-globe"></i>`;
   container.onclick = function(e) {
     e.preventDefault();
     if (window.currentMode === 'uk') {
@@ -24,8 +23,10 @@ GlobeSwitcherControl.prototype.onAdd = function(map) {
 };
 
 function addUKControls(map, baseLayers) {
-    L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map); // Basemap selector (top)
-    // Globe control handled in map.js so it's never duplicated
+    L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map);
+    // Add globe control here for stacking order
+    map.addControl(new GlobeSwitcherControl({ position: 'topright' }));
+    // Route control is handled in map.js after
     L.control.locate().addTo(map);
     L.control.measure({
         position: 'topleft',
@@ -40,7 +41,6 @@ function addUKControls(map, baseLayers) {
     }).addTo(map);
 }
 function addWorldControls(map) {
-    // No need to duplicate Globe or layers here; handled in map.js
     L.control.locate().addTo(map);
     L.control.measure({
         position: 'topleft',
