@@ -8,7 +8,26 @@ function transformCoords(arr) {
     return proj4('EPSG:27700', 'EPSG:4326', arr).reverse();
 }
 var ukInitialCenter = transformCoords([374288, 442016]);
+var ukInitialZoom = 7;
 
+// === [REMEMBER: Restore last map state if available] ===
+let savedMode = localStorage.getItem('lastMode');
+let savedCenter = localStorage.getItem('lastCenter');
+let savedZoom = localStorage.getItem('lastZoom');
+
+if (savedCenter && savedZoom) {
+    try {
+        savedCenter = JSON.parse(savedCenter);
+        // Overwrite initial center/zoom
+        ukInitialCenter = savedCenter;
+        ukInitialZoom = Number(savedZoom);
+    } catch(e) {
+        // fallback: do nothing
+    }
+}
+var currentMode = savedMode || 'uk';
+
+// Standard config
 const serviceUrl = CONFIG.serviceUrl;
 const apiKey = CONFIG.apiKey;
 
@@ -24,12 +43,12 @@ var bngcrs = new L.Proj.CRS('EPSG:27700',
 var mapUK = L.map('map-uk', {
     crs: bngcrs,
     center: ukInitialCenter,
-    zoom: 7,
+    zoom: ukInitialZoom,
     attributionControl: false
 });
 var mapWorld = L.map('map-world', {
     center: ukInitialCenter,
-    zoom: 5, // best match for UK zoom 7; tweak if needed
+    zoom: getEquivalentWorldZoom(ukInitialZoom),
     attributionControl: false
 });
 
@@ -62,7 +81,6 @@ function getEquivalentWorldZoom(bngZoom) {
   };
   return match[bngZoom] || 9; // Fallback
 }
-
 function getEquivalentUKZoom(osmZoom) {
   const match = {
     7: 0,
@@ -76,14 +94,12 @@ function getEquivalentUKZoom(osmZoom) {
     15: 8,
     16: 9,
     17: 10,
-    18: 12
+    18: 11
   };
   return match[osmZoom] || 7; // Fallback
 }
 
-
-// Track current map mode
-var currentMode = 'uk';
+// Track globe button
 var globeButton;
 
 // Custom Globe Control
@@ -128,6 +144,20 @@ function updateGlobeIcon() {
   }
 }
 
+// === [REMEMBER: Save state on move/zoom] ===
+function saveMapState() {
+    let map, mode = currentMode;
+    if (mode === 'uk') map = mapUK;
+    else map = mapWorld;
+    const center = map.getCenter();
+    const zoom = map.getZoom();
+    localStorage.setItem('lastMode', mode);
+    localStorage.setItem('lastCenter', JSON.stringify([center.lat, center.lng]));
+    localStorage.setItem('lastZoom', zoom);
+}
+mapUK.on('moveend zoomend', saveMapState);
+mapWorld.on('moveend zoomend', saveMapState);
+
 // Map mode switch, preserving center/zoom with equivalent zoom conversion
 window.switchMap = function(mode) {
   var center, zoom;
@@ -159,15 +189,16 @@ window.switchMap = function(mode) {
     currentMode = 'uk';
   }
   updateGlobeIcon();
+  saveMapState(); // save after mode switch
 };
 
-// Ensure globe icon color is correct on initial load
-updateGlobeIcon();
+// === [REMEMBER: Set initial mode on load] ===
+if (currentMode === 'world') {
+    document.getElementById('map-uk').style.display = 'none';
+    document.getElementById('map-world').style.display = 'block';
+    mapWorld.setView(mapUK.getCenter(), mapWorld.getZoom());
+    mapWorld.invalidateSize();
+    updateGlobeIcon();
+}
 
-// Log zoom on every zoomend event
-mapUK.on('zoomend', function() {
-    console.log('UK map (EPSG:27700) zoom:', mapUK.getZoom());
-});
-mapWorld.on('zoomend', function() {
-    console.log('Worldwide map (EPSG:3857) zoom:', mapWorld.getZoom());
-});
+updateGlobeIcon();
