@@ -4,10 +4,14 @@ window.makeRouteControl = function(map, mode, featureGroup, drawOpts) {
     return L.Control.extend({
         options: { position: 'topright' },
         onAdd: function() {
-            var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+            var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control route-stack');
             container.style.marginTop = '4px';
+            container.style.display = 'flex';
+            container.style.flexDirection = 'column';
+            container.style.alignItems = 'flex-end'; // Right-align icon
 
-            var btn = L.DomUtil.create('a', '', container);
+            // Route icon button (at end/top-right)
+            var btn = L.DomUtil.create('a', 'route-panel-icon', container);
             btn.innerHTML = '<i class="fas fa-route"></i>';
             btn.href = '#';
             btn.title = 'Show/Hide Routes';
@@ -17,12 +21,16 @@ window.makeRouteControl = function(map, mode, featureGroup, drawOpts) {
             btn.style.alignItems = 'center';
             btn.style.justifyContent = 'center';
 
+            // Panel (vertical)
             var panel = L.DomUtil.create('div', 'route-panel', container);
             panel.innerHTML = `
-                <select id="route-list-${mode}"></select>
-                <button id="load-route-${mode}">Load</button>
+                <select id="route-list-${mode}" style="margin-bottom:5px;"></select>
+                <button id="load-route-${mode}" style="margin-bottom:5px;">Load</button>
                 <button id="delete-route-${mode}">Delete</button>
             `;
+
+            panel.style.flexDirection = 'column';
+            panel.style.alignItems = 'stretch';
 
             var drawControl = new L.Control.Draw(Object.assign({
                 position: 'topright',
