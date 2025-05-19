@@ -137,7 +137,6 @@ const RouteControlWorld = window.makeRouteControl(mapWorld, 'world', window.rout
 mapUK.addControl(new RouteControlUK());
 mapWorld.addControl(new RouteControlWorld());
 
-
 // Save drawn routes
 mapUK.on(L.Draw.Event.CREATED, function (e) {
     if (e.layerType === 'polyline') {
@@ -226,16 +225,16 @@ window.switchMap = function(mode) {
     saveMapState();
 };
 
-// --- Globe button color etc (unchanged) ---
+// --- Globe button color update, no globeButton variable required ---
 function updateGlobeIcon() {
-  if (!globeButton) return;
-  var svg = globeButton.querySelector('svg');
+  var svg = document.querySelector('.leaflet-control-custom svg');
+  if (!svg) return;
   if (currentMode === 'world') {
     svg.style.stroke = '#FF9500';
-    globeButton.classList.add('active');
+    if(svg.parentElement) svg.parentElement.classList.add('active');
   } else {
     svg.style.stroke = '#000000';
-    globeButton.classList.remove('active');
+    if(svg.parentElement) svg.parentElement.classList.remove('active');
   }
 }
 
