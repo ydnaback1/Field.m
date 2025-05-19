@@ -12,6 +12,13 @@
 
 </head>
 <body>
+  <!-- Route UI for saving/loading/deleting routes -->
+  <div id="route-ui" style="position:absolute;top:90px;left:10px;z-index:1200;background:rgba(255,255,255,0.9);padding:6px;border-radius:6px;">
+    <select id="route-list"></select>
+    <button id="load-route">Load</button>
+    <button id="delete-route">Delete</button>
+  </div>
+
   <div id="map-uk"></div>
   <div id="map-world"></div>
 
@@ -23,6 +30,7 @@
   <script src="config.js"></script>
   <script src="js/layers.js"></script>
   <script src="js/controls.js"></script>
+  <script src="js/routes.js"></script>
   <script src="js/map.js"></script>
 </body>
 </html>
