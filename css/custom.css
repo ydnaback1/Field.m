@@ -136,32 +136,3 @@ html, body {
   outline: none !important;
   background-image: none !important;
 }
-
-@media (prefers-color-scheme: dark) {
-  body, #map-uk, #map-world {
-    background: #181a1b;
-    color: #eee;
-  }
-  .leaflet-control,
-  .leaflet-control-custom,
-  .route-panel,
-  #route-info,
-  .leaflet-control-layers-toggle {
-    background: #23272b !important;
-    color: #eee !important;
-    border-color: #444 !important;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.25) !important;
-  }
-  .fa-route,
-  .fa-globe,
-  .fa-layer-group {
-    color: #eee !important;
-  }
-  .route-panel button,
-  .route-panel select {
-    background: #23272b !important;
-    color: #eee !important;
-    border-color: #444 !important;
-  }
-}
-
