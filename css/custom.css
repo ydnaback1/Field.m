@@ -126,6 +126,13 @@ html, body {
   box-shadow: none !important;
 }
 
-.leaflet-control-layers-toggle::before {
-  color: #000 !important;
+.leaflet-control-layers-toggle,
+.leaflet-control-layers-toggle:focus,
+.leaflet-control-layers-toggle:active,
+.leaflet-control-layers-toggle:hover {
+  border: none !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  background-image: none !important;
 }
