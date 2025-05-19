@@ -41,7 +41,9 @@ html, body {
 }
 .route-panel-icon {
   align-self: flex-end;
-  background: white;
+}
+.leaflet-bar.leaflet-control.route-stack {
+  background-color: white;
 }
 .route-panel {
   min-width: 100px;
