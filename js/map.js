@@ -177,9 +177,17 @@ function saveMapState() {
 mapUK.on('moveend zoomend', saveMapState);
 mapWorld.on('moveend zoomend', saveMapState);
 
-// Map mode switch: swap controls and panels cleanly!
+// --- FIX: Remove draw toolbar if open before switching maps ---
 window.switchMap = function(mode) {
   var center, zoom;
+
+  // Remove any open draw tool on current map before switching
+  if (window.activeDrawControl && window.activeDrawMap) {
+    window.activeDrawMap.removeControl(window.activeDrawControl);
+    window.activeDrawControl = null;
+    window.activeDrawMap = null;
+  }
+
   if (currentMode === 'uk') {
     center = mapUK.getCenter();
     zoom = mapUK.getZoom();
