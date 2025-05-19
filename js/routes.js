@@ -28,6 +28,7 @@ function deleteRouteFromList(mode, index) {
     let arr = getRouteList(mode);
     arr.splice(index, 1);
     localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
+    hideRouteInfo(); // Hide info box on delete
 }
 
 function updateRouteListUI(mode) {
@@ -65,6 +66,7 @@ function loadRouteByIndex(mode, idx) {
         if (layer.getBounds().isValid()) mapWorld.fitBounds(layer.getBounds());
         window.currentRouteIndex.world = Number(idx);
     }
+    showRouteInfo(routes[idx].name, layer);
 }
 
 window.getRouteList = getRouteList;
@@ -73,3 +75,36 @@ window.updateRouteInList = updateRouteInList;
 window.deleteRouteFromList = deleteRouteFromList;
 window.updateRouteListUI = updateRouteListUI;
 window.loadRouteByIndex = loadRouteByIndex;
+
+// --- Route Info Box Logic ---
+function showRouteInfo(name, layer) {
+    let totalMeters = 0;
+    if (layer instanceof L.Polyline) {
+        const latlngs = layer.getLatLngs();
+        for (let i = 1; i < latlngs.length; i++) {
+            totalMeters += latlngs[i-1].distanceTo(latlngs[i]);
+        }
+    } else if (layer instanceof L.FeatureGroup || layer instanceof L.GeoJSON) {
+        layer.eachLayer(l => {
+            if (l instanceof L.Polyline) {
+                const latlngs = l.getLatLngs();
+                for (let i = 1; i < latlngs.length; i++) {
+                    totalMeters += latlngs[i-1].distanceTo(latlngs[i]);
+                }
+            }
+        });
+    }
+    const km = (totalMeters / 1000).toFixed(2);
+    const mi = (totalMeters / 1609.344).toFixed(2);
+    let info = `<strong>${name}</strong><br>${km} km / ${mi} mi`;
+    let box = document.getElementById('route-info');
+    if (box) {
+        box.innerHTML = info;
+        box.style.display = 'block';
+    }
+}
+
+function hideRouteInfo() {
+    let box = document.getElementById('route-info');
+    if (box) box.style.display = 'none';
+}
