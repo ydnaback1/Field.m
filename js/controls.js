@@ -10,11 +10,24 @@ function addUKControls(map, baseLayers) {
     L.control.layers(baseLayers).addTo(map);
     L.control.scale({
         position: 'bottomleft',
-        imperial: false, 
+        imperial: false,
         metric: true,
-        maxWidth: 200,
-        background: '#00FFFFFF',
+        maxWidth: 200
     }).addTo(map);
+
+    // Draw control for polylines (walking routes)
+    var drawControl = new L.Control.Draw({
+        draw: {
+            polyline: { shapeOptions: { color: "#FF9500", weight: 5 } },
+            polygon: false,
+            rectangle: false,
+            circle: false,
+            marker: false,
+            circlemarker: false
+        },
+        edit: { featureGroup: window.routeLayerUK }
+    });
+    map.addControl(drawControl);
 }
 
 function addWorldControls(map) {
@@ -26,8 +39,21 @@ function addWorldControls(map) {
     }).addTo(map);
     L.control.scale({
         position: 'bottomleft',
-        imperial: true,   
+        imperial: true,
         metric: true,
         maxWidth: 200
     }).addTo(map);
+
+    var drawControl = new L.Control.Draw({
+        draw: {
+            polyline: { shapeOptions: { color: "#3388ff", weight: 5 } },
+            polygon: false,
+            rectangle: false,
+            circle: false,
+            marker: false,
+            circlemarker: false
+        },
+        edit: { featureGroup: window.routeLayerWorld }
+    });
+    map.addControl(drawControl);
 }
