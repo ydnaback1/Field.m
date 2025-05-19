@@ -2,70 +2,58 @@ body { margin:0; padding:0; }
 #map-uk, #map-world { width:100vw; height:100vh; }
 #map-world { display: none; }
 
-.leaflet-control-custom {
+.leaflet-control-custom,
+.leaflet-control { /* Applies to all custom controls for consistency */
   background: white;
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  border-radius: 4px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
-  transition: background 0.2s;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.13);
+  border-radius: 6px;
 }
+
 .leaflet-control-custom.active {
   background: #fff6e5 !important;
 }
+
 .leaflet-control-custom svg {
   transition: stroke 0.2s;
 }
 
-/* Scale bar transparent for cleaner look */
-.leaflet-control-scale-line {
-  background: transparent !important;
+/* Globe icon specifically for orange state */
+.globe-btn.active svg {
+  stroke: #FF9500 !important;
 }
 
-/* Route UI and button positioning and style */
-#toggle-route-ui {
-  position: absolute;
-  top: 65px;
-  right: 10px;
-  z-index: 1201;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #bbb;
-  border-radius: 6px;
-  padding: 4px 12px;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.13);
-  font-size: 15px;
-  cursor: pointer;
-}
-
-#route-ui {
-  position: absolute;
-  top: 110px; /* 65px for button + 45px gap (adjust for your layout) */
-  right: 10px;
-  z-index: 1200;
-  background: rgba(255,255,255,0.96);
-  padding: 6px 8px;
+/* Route panel inside Leaflet control stack */
+.route-panel {
+  min-width: 190px;
+  background: rgba(255,255,255,0.97);
   border-radius: 6px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.13);
   border: 1px solid #bbb;
-  display: none; /* hidden by default, toggled with button */
+  margin: 4px 0 0 0;
+  padding: 8px 10px;
+  z-index: 1002;
+  display: none;
   flex-direction: row;
   gap: 4px;
   align-items: center;
+  position: relative;
 }
+.route-panel.open { display: flex; }
 
-#route-list, #load-route, #delete-route {
+.route-panel select, .route-panel button {
   height: 32px;
-}
-
-#route-ui select, #route-ui button {
   font-size: 15px;
   border-radius: 4px;
   border: 1px solid #bbb;
+  background: #fff;
+  margin-right: 2px;
+}
+.route-panel button {
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.fa-route {
+  font-size: 1.4em;
+  color: #333;
 }
