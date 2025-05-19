@@ -81,7 +81,7 @@ addWorldControls(mapWorld);
 const ukDrawOpts = {
   draw: {
     polyline: {
-      shapeOptions: { color: "#FF9500", weight: 5 },
+      shapeOptions: { color: "#ff00f7", weight: 5 },
       touchExtend: false,
       finishOnDoubleClick: false
     },
