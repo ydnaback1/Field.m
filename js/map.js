@@ -73,11 +73,11 @@ ukBaseLayers['OS Road'].addTo(mapUK);
 var worldBaseLayer = getWorldBaseLayer();
 worldBaseLayer.addTo(mapWorld);
 
-// Add controls (NO DRAW here)
+// Add other controls (NOT draw or globe here)
 addUKControls(mapUK, ukBaseLayers);
 addWorldControls(mapWorld);
 
-// Draw options (finishOnDoubleClick: false for mobile-friendliness)
+// Draw options for both maps
 const ukDrawOpts = {
   draw: {
     polyline: {
@@ -107,34 +107,45 @@ const worldDrawOpts = {
   }
 };
 
-// Route controls: one per map, only mounted on active map
+// Create controls (but only add to visible map)
+const GlobeSwitcherUK = new GlobeSwitcherControl({ position: 'topright' });
+const GlobeSwitcherWorld = new GlobeSwitcherControl({ position: 'topright' });
+
 const RouteControlUK = new (window.makeRouteControl(mapUK, 'uk', window.routeLayerUK, ukDrawOpts))();
 const RouteControlWorld = new (window.makeRouteControl(mapWorld, 'world', window.routeLayerWorld, worldDrawOpts))();
-mapUK.addControl(RouteControlUK);
 
-// Save drawn routes
+// Initially show only on the visible map
+if (currentMode === 'world') {
+  mapWorld.addControl(RouteControlWorld);
+  mapWorld.addControl(GlobeSwitcherWorld);
+} else {
+  mapUK.addControl(RouteControlUK);
+  mapUK.addControl(GlobeSwitcherUK);
+}
+
+// Route event handlers
 mapUK.on(L.Draw.Event.CREATED, function (e) {
   if (e.layerType === 'polyline') {
     let name = prompt("Name this route:");
-    if (!name) return;
-    window.saveRouteToList('uk', name, e.layer);
     window.routeLayerUK.clearLayers();
-    window.routeLayerUK.addLayer(e.layer);
-    window.updateRouteListUI('uk');
+    if (name) {
+      window.saveRouteToList('uk', name, e.layer);
+      window.routeLayerUK.addLayer(e.layer);
+      window.updateRouteListUI('uk');
+    }
   }
 });
 mapWorld.on(L.Draw.Event.CREATED, function (e) {
   if (e.layerType === 'polyline') {
     let name = prompt("Name this route:");
-    if (!name) return;
-    window.saveRouteToList('world', name, e.layer);
     window.routeLayerWorld.clearLayers();
-    window.routeLayerWorld.addLayer(e.layer);
-    window.updateRouteListUI('world');
+    if (name) {
+      window.saveRouteToList('world', name, e.layer);
+      window.routeLayerWorld.addLayer(e.layer);
+      window.updateRouteListUI('world');
+    }
   }
 });
-
-// Update edited route in localStorage
 mapUK.on(L.Draw.Event.EDITED, function (e) {
   let idx = window.currentRouteIndex.uk;
   if (idx == null) return;
@@ -166,18 +177,20 @@ function saveMapState() {
 mapUK.on('moveend zoomend', saveMapState);
 mapWorld.on('moveend zoomend', saveMapState);
 
-// Switch map, stack controls and update globe icon
+// Map mode switch: swap controls and panels cleanly!
 window.switchMap = function(mode) {
   var center, zoom;
   if (currentMode === 'uk') {
     center = mapUK.getCenter();
     zoom = mapUK.getZoom();
     mapUK.removeControl(RouteControlUK);
+    mapUK.removeControl(GlobeSwitcherUK);
     if (mode === 'world') zoom = getEquivalentWorldZoom(zoom);
   } else {
     center = mapWorld.getCenter();
     zoom = mapWorld.getZoom();
     mapWorld.removeControl(RouteControlWorld);
+    mapWorld.removeControl(GlobeSwitcherWorld);
     if (mode === 'uk') zoom = getEquivalentUKZoom(zoom);
   }
 
@@ -188,6 +201,7 @@ window.switchMap = function(mode) {
     mapWorld.invalidateSize();
     currentMode = 'world';
     mapWorld.addControl(RouteControlWorld);
+    mapWorld.addControl(GlobeSwitcherWorld);
   } else {
     document.getElementById('map-uk').style.display = 'block';
     document.getElementById('map-world').style.display = 'none';
@@ -195,12 +209,13 @@ window.switchMap = function(mode) {
     mapUK.invalidateSize();
     currentMode = 'uk';
     mapUK.addControl(RouteControlUK);
+    mapUK.addControl(GlobeSwitcherUK);
   }
   updateGlobeIcon();
   saveMapState();
 };
 
-// Globe icon: updates color and active state based on currentMode
+// Update globe icon color based on currentMode
 function updateGlobeIcon() {
   var globeControl = document.querySelector('.globe-btn');
   if (!globeControl) return;
@@ -215,16 +230,5 @@ function updateGlobeIcon() {
   }
 }
 
-// Set correct initial state on load
-if (currentMode === 'world') {
-  document.getElementById('map-uk').style.display = 'none';
-  document.getElementById('map-world').style.display = 'block';
-  mapWorld.setView(mapUK.getCenter(), mapWorld.getZoom());
-  mapWorld.invalidateSize();
-  mapWorld.addControl(RouteControlWorld);
-  updateGlobeIcon();
-} else {
-  mapUK.addControl(RouteControlUK);
-}
-
+// Initial state
 updateGlobeIcon();
