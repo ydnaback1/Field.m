@@ -7,7 +7,6 @@ window.makeRouteControl = function(map, mode, featureGroup, drawOpts) {
             var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
             container.style.marginTop = '4px';
 
-            // Icon button
             var btn = L.DomUtil.create('a', '', container);
             btn.innerHTML = '<i class="fas fa-route"></i>';
             btn.href = '#';
@@ -18,15 +17,14 @@ window.makeRouteControl = function(map, mode, featureGroup, drawOpts) {
             btn.style.alignItems = 'center';
             btn.style.justifyContent = 'center';
 
-            // Panel
+            // Use unique IDs for everything per mode
             var panel = L.DomUtil.create('div', 'route-panel', container);
             panel.innerHTML = `
-                <select id="route-list"></select>
-                <button id="load-route">Load</button>
-                <button id="delete-route">Delete</button>
+                <select id="route-list-${mode}"></select>
+                <button id="load-route-${mode}">Load</button>
+                <button id="delete-route-${mode}">Delete</button>
             `;
 
-            // Create the draw control (polyline only) but do not add to map yet
             var drawControl = new L.Control.Draw(Object.assign({
                 position: 'topright',
                 edit: { featureGroup }
@@ -34,7 +32,6 @@ window.makeRouteControl = function(map, mode, featureGroup, drawOpts) {
 
             function togglePanel() {
                 var open = panel.classList.toggle('open');
-                // Add/remove draw controls and update routes UI
                 if (open) {
                     map.addControl(drawControl);
                     window.updateRouteListUI(mode);
@@ -48,15 +45,14 @@ window.makeRouteControl = function(map, mode, featureGroup, drawOpts) {
                 togglePanel();
             };
 
-            // Set up listeners for route UI
             setTimeout(function() {
-                document.getElementById('load-route').onclick = function() {
-                    const idx = document.getElementById('route-list').value;
+                document.getElementById(`load-route-${mode}`).onclick = function() {
+                    const idx = document.getElementById(`route-list-${mode}`).value;
                     if (idx === '' || idx === null) return;
                     window.loadRouteByIndex(mode, idx);
                 };
-                document.getElementById('delete-route').onclick = function() {
-                    const idx = document.getElementById('route-list').value;
+                document.getElementById(`delete-route-${mode}`).onclick = function() {
+                    const idx = document.getElementById(`route-list-${mode}`).value;
                     if (idx === '' || idx === null) return;
                     window.deleteRouteFromList(mode, idx);
                     window.updateRouteListUI(mode);
