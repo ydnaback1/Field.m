@@ -1,30 +1,26 @@
-body { margin:0; padding:0; }
-#map-uk, #map-world { width:100vw; height:100vh; }
-#map-world { display: none; }
-
 .leaflet-control-custom,
-.leaflet-control { /* Applies to all custom controls for consistency */
+.leaflet-control {
   background: white;
   box-shadow: 0 1px 4px rgba(0,0,0,0.13);
   border-radius: 6px;
+  width: 34px;
+  height: 34px;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
 }
-
-.leaflet-control-custom.active {
+.leaflet-control-custom.active,
+.globe-btn.active {
   background: #fff6e5 !important;
 }
-
-.leaflet-control-custom svg {
-  transition: stroke 0.2s;
+.leaflet-control-custom i.fas.fa-globe {
+  font-size: 1.5em;
 }
-
-/* Globe icon specifically for orange state */
-.globe-btn.active svg {
-  stroke: #FF9500 !important;
+.route-panel-icon {
+  align-self: flex-end;
 }
-
-/* Route panel inside Leaflet control stack */
 .route-panel {
-  min-width: 190px;
+  min-width: 100px;
   background: rgba(255,255,255,0.97);
   border-radius: 6px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.13);
@@ -33,26 +29,23 @@ body { margin:0; padding:0; }
   padding: 8px 10px;
   z-index: 1002;
   display: none;
-  flex-direction: row;
-  gap: 4px;
-  align-items: center;
+  flex-direction: column;
+  gap: 0px;
+  align-items: stretch;
   position: relative;
 }
 .route-panel.open { display: flex; }
-
 .route-panel select, .route-panel button {
   height: 32px;
   font-size: 15px;
   border-radius: 4px;
   border: 1px solid #bbb;
   background: #fff;
-  margin-right: 2px;
 }
 .route-panel button {
   padding: 0 12px;
   cursor: pointer;
 }
-
 .fa-route {
   font-size: 1.4em;
   color: #333;
