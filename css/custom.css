@@ -42,14 +42,6 @@ html, body {
 .route-panel-icon {
   align-self: flex-end;
   background: white;
-  border-radius: 6px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.13);
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 5px;
 }
 .route-panel {
   min-width: 100px;
@@ -82,3 +74,21 @@ html, body {
   font-size: 1.4em;
   color: #333;
 }
+
+#route-info {
+  position: absolute;
+  left: 50%;
+  top: 24px; /* distance from top, adjust as needed */
+  transform: translateX(-50%);
+  background: rgba(255,255,255,0.97);
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.13);
+  border: 1px solid #bbb;
+  padding: 6px 14px;
+  font-size: 1em;
+  z-index: 1200;
+  min-width: 180px;
+  pointer-events: none;
+  display: none;
+}
+
