@@ -131,8 +131,12 @@ const worldDrawOpts = {
 };
 
 // Add modular route controls (icon+panel+dynamic draw) to maps
-mapUK.addControl(new window.makeRouteControl(mapUK, 'uk', window.routeLayerUK, ukDrawOpts));
-mapWorld.addControl(new window.makeRouteControl(mapWorld, 'world', window.routeLayerWorld, worldDrawOpts));
+const RouteControlUK = window.makeRouteControl(mapUK, 'uk', window.routeLayerUK, ukDrawOpts);
+const RouteControlWorld = window.makeRouteControl(mapWorld, 'world', window.routeLayerWorld, worldDrawOpts);
+
+mapUK.addControl(new RouteControlUK());
+mapWorld.addControl(new RouteControlWorld());
+
 
 // Save drawn routes
 mapUK.on(L.Draw.Event.CREATED, function (e) {
