@@ -74,9 +74,13 @@ html, body {
 }
 .fa-route {
   font-size: 1.4em;
-  color: #333;
+  color: #000;
 }
 
+.fa-layer {
+  font-size: 1.4em;
+  color: #000;
+}
 #route-info {
   position: absolute;
   left: 50%;
