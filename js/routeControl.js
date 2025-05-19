@@ -33,9 +33,13 @@ window.makeRouteControl = function(map, mode, featureGroup, drawOpts) {
                 var open = panel.classList.toggle('open');
                 if (open) {
                     map.addControl(drawControl);
+                    window.activeDrawControl = drawControl;
+                    window.activeDrawMap = map;
                     window.updateRouteListUI(mode);
                 } else {
                     map.removeControl(drawControl);
+                    window.activeDrawControl = null;
+                    window.activeDrawMap = null;
                 }
             }
 
