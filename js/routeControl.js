@@ -17,7 +17,6 @@ window.makeRouteControl = function(map, mode, featureGroup, drawOpts) {
             btn.style.alignItems = 'center';
             btn.style.justifyContent = 'center';
 
-            // Use unique IDs for everything per mode
             var panel = L.DomUtil.create('div', 'route-panel', container);
             panel.innerHTML = `
                 <select id="route-list-${mode}"></select>
