@@ -1,0 +1,4 @@
+/* custom.css */
+.leaflet-control-scale-line {
+  background: transparent !important;
+}
