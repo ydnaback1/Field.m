@@ -93,7 +93,7 @@ html, body {
   min-width: 180px;
   pointer-events: none;
   display: none;
-  text-allign: center;
+  text-align: center;
 }
 
 .leaflet-control-layers-toggle {
@@ -126,3 +126,6 @@ html, body {
   box-shadow: none !important;
 }
 
+.leaflet-control-layers-toggle::before {
+  color: #000 !important;
+}
