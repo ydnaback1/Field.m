@@ -161,20 +161,22 @@ function showRoutePanelContent() {
     }
   }
 
-  panelContent.innerHTML = `
-    <div style="font-size: 1.15em;font-weight:600;margin-bottom:6px;">${name}</div>
-    <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px; justify-content:center;">
-      ${km ? `<i class="fa-solid fa-person-walking"></i> ${km} km / ${mi} mi` : ""}
-      ${timeStr ? `<span><i class="fa-solid fa-stopwatch"></i> ${timeStr}</span>` : ""}
-    </div>
+panelContent.innerHTML = `
+  <div style="font-size: 1.28em; font-weight: bold; margin-bottom: 10px;">${name}</div>
+  <div class="metric-row">
+    ${km ? `<span class="metric-pill"><i class="fa-solid fa-person-walking"></i> ${km} km / ${mi} mi</span>` : ""}
+    ${timeStr ? `<span class="metric-pill"><i class="fa-solid fa-stopwatch"></i> ${timeStr}</span>` : ""}
+  </div>
+  <div>
+    <select id="route-list-panel"></select>
+  </div>
+  <button id="add-route-panel">Draw New Route</button>
+  <div class="route-actions-row">
+    <button id="load-route-panel" style="margin-right:8px;">Load</button>
+    <button id="delete-route-panel" style="margin-left:8px;">Delete</button>
+  </div>
+`;
 
-    <div>
-      <select id="route-list-panel" style="margin-bottom:5px;"></select><br>
-      <button id="add-route-panel" style="margin-bottom:5px;">Draw New Route</button><br>
-      <button id="load-route-panel" style="margin-right:5px;">Load</button>
-      <button id="delete-route-panel" style="margin-left:5px;">Delete</button>
-    </div>
-  `;
   const sel = panelContent.querySelector('#route-list-panel');
   routes.forEach((r, i) => {
     let opt = document.createElement('option');
