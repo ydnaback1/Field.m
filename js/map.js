@@ -107,15 +107,138 @@ const worldDrawOpts = {
   }
 };
 
-// Create Route controls (add AFTER addUKControls/addWorldControls for correct stacking)
-const RouteControlUK = new (window.makeRouteControl(mapUK, 'uk', window.routeLayerUK, ukDrawOpts))();
-const RouteControlWorld = new (window.makeRouteControl(mapWorld, 'world', window.routeLayerWorld, worldDrawOpts))();
+const fab = document.getElementById('fab-route');
+const panel = document.getElementById('bottom-panel');
+const fabIcon = fab.querySelector('i');
+const drawToolbarContainer = document.getElementById('draw-toolbar-container');
+const panelContent = document.getElementById('panel-content');
+let activeDrawControl = null;
 
-if (currentMode === 'world') {
-  mapWorld.addControl(RouteControlWorld);
-} else {
-  mapUK.addControl(RouteControlUK);
+fab.onclick = function() {
+  const isOpen = panel.classList.toggle('open');
+  fab.classList.toggle('panel-open', isOpen);
+  fabIcon.className = isOpen ? 'fas fa-xmark' : 'fas fa-route';
+  if (isOpen) {
+    showRoutePanelContent();
+    addDrawToolbar();
+  } else {
+    panelContent.innerHTML = '';
+    removeDrawToolbar();
+  }
+};
+
+
+function showRoutePanelContent() {
+  const mode = window.currentMode || 'uk';
+  const routes = window.getRouteList(mode);
+  const idx = window.currentRouteIndex[mode];
+  const currentRoute = (typeof idx === "number" && routes[idx]) ? routes[idx] : {};
+  const name = currentRoute.name || 'No route selected';
+  let km = "", mi = "";
+  if (currentRoute.geojson) {
+    const layer = L.geoJSON(currentRoute.geojson);
+    let totalMeters = 0;
+    layer.eachLayer(l => {
+      if (l instanceof L.Polyline) {
+        const latlngs = l.getLatLngs();
+        for (let i = 1; i < latlngs.length; i++) {
+          totalMeters += latlngs[i-1].distanceTo(latlngs[i]);
+        }
+      }
+    });
+    km = (totalMeters / 1000).toFixed(2);
+    mi = (totalMeters / 1609.344).toFixed(2);
+  }
+  let timeStr = "";
+  if (km) {
+    let totalMin = Math.round((km / 5) * 60);
+    if (totalMin >= 60) {
+      const hours = Math.floor(totalMin / 60);
+      const mins = totalMin % 60;
+      timeStr = `${hours}h${mins > 0 ? ` ${mins}m` : ""}`;
+    } else {
+      timeStr = `${totalMin}m`;
+    }
+  }
+
+  panelContent.innerHTML = `
+    <div style="font-size: 1.15em;font-weight:600;margin-bottom:6px;">${name}</div>
+    <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px; justify-content:center;">
+      ${km ? `<i class="fa-solid fa-person-walking"></i> ${km} km / ${mi} mi` : ""}
+      ${timeStr ? `<span><i class="fa-solid fa-stopwatch"></i> ${timeStr}</span>` : ""}
+    </div>
+
+    <div>
+      <select id="route-list-panel" style="margin-bottom:5px;"></select><br>
+      <button id="add-route-panel" style="margin-bottom:5px;">Draw New Route</button><br>
+      <button id="load-route-panel" style="margin-right:5px;">Load</button>
+      <button id="delete-route-panel" style="margin-left:5px;">Delete</button>
+    </div>
+  `;
+  const sel = panelContent.querySelector('#route-list-panel');
+  routes.forEach((r, i) => {
+    let opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = r.name;
+    sel.appendChild(opt);
+  });
+  panelContent.querySelector('#load-route-panel').onclick = function() {
+    const idx = sel.value;
+    if (idx === '' || idx === null) return;
+    window.loadRouteByIndex(mode, idx);
+    showRoutePanelContent();
+  };
+  panelContent.querySelector('#delete-route-panel').onclick = function() {
+    const idx = sel.value;
+    if (idx === '' || idx === null) return;
+    window.deleteRouteFromList(mode, idx);
+    window.updateRouteListUI(mode);
+    if (mode === 'uk') window.routeLayerUK.clearLayers();
+    else window.routeLayerWorld.clearLayers();
+    showRoutePanelContent();
+  };
+  // New route draw button
+  panelContent.querySelector('#add-route-panel').onclick = function() {
+    document.querySelector('.leaflet-draw-draw-polyline').click();
+  };
 }
+
+
+function addDrawToolbar() {
+  if (activeDrawControl) return;
+  removeDrawToolbar();
+  const mode = window.currentMode || 'uk';
+  const fg = (mode === 'uk') ? window.routeLayerUK : window.routeLayerWorld;
+  activeDrawControl = new L.Control.Draw({
+    position: 'topright',
+    edit: { featureGroup: fg },
+    draw: {
+      polyline: {
+        shapeOptions: { color: "#FF9500", weight: 5 },
+        touchExtend: false,
+        finishOnDoubleClick: false
+      },
+      polygon: false, rectangle: false, circle: false, marker: false, circlemarker: false
+    }
+  });
+  (mode === 'uk' ? mapUK : mapWorld).addControl(activeDrawControl);
+  setTimeout(() => {
+    const toolbar = document.querySelector('.leaflet-draw-toolbar');
+    if (toolbar && drawToolbarContainer) drawToolbarContainer.appendChild(toolbar);
+  }, 100);
+}
+
+function removeDrawToolbar() {
+  if (activeDrawControl) {
+    const mode = window.currentMode || 'uk';
+    (mode === 'uk' ? mapUK : mapWorld).removeControl(activeDrawControl);
+    activeDrawControl = null;
+  }
+  if (drawToolbarContainer.firstChild) {
+    drawToolbarContainer.innerHTML = '';
+  }
+}
+
 
 // Route event handlers
 mapUK.on(L.Draw.Event.CREATED, function (e) {
@@ -170,46 +293,6 @@ function saveMapState() {
 }
 mapUK.on('moveend zoomend', saveMapState);
 mapWorld.on('moveend zoomend', saveMapState);
-
-// --- Remove draw toolbar if open before switching maps ---
-window.switchMap = function(mode) {
-  var center, zoom;
-  if (window.activeDrawControl && window.activeDrawMap) {
-    window.activeDrawMap.removeControl(window.activeDrawControl);
-    window.activeDrawControl = null;
-    window.activeDrawMap = null;
-  }
-
-  if (currentMode === 'uk') {
-    center = mapUK.getCenter();
-    zoom = mapUK.getZoom();
-    mapUK.removeControl(RouteControlUK);
-    if (mode === 'world') zoom = getEquivalentWorldZoom(zoom);
-  } else {
-    center = mapWorld.getCenter();
-    zoom = mapWorld.getZoom();
-    mapWorld.removeControl(RouteControlWorld);
-    if (mode === 'uk') zoom = getEquivalentUKZoom(zoom);
-  }
-
-  if (mode === 'world') {
-    document.getElementById('map-uk').style.display = 'none';
-    document.getElementById('map-world').style.display = 'block';
-    mapWorld.setView([center.lat, center.lng], zoom);
-    mapWorld.invalidateSize();
-    currentMode = 'world';
-    mapWorld.addControl(RouteControlWorld);
-  } else {
-    document.getElementById('map-uk').style.display = 'block';
-    document.getElementById('map-world').style.display = 'none';
-    mapUK.setView([center.lat, center.lng], zoom);
-    mapUK.invalidateSize();
-    currentMode = 'uk';
-    mapUK.addControl(RouteControlUK);
-  }
-  updateGlobeIcon();
-  saveMapState();
-};
 
 // Update globe icon color based on currentMode
 function updateGlobeIcon() {

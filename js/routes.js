@@ -52,18 +52,21 @@ function loadRouteByIndex(mode, idx) {
     const geojson = routes[idx].geojson;
     let layer = L.geoJSON(geojson, {
         style: mode === 'uk'
-            ? { color: "#FF9500", weight: 5 }
+            ? { color: "#ff33da", weight: 5 }
             : { color: "#3388ff", weight: 5 }
     });
+    const panelHeight = 200;
+    const padding = { paddingBottomRight: [0, panelHeight + 16], paddingTopLeft: [0, 24] };
+
     if (mode === 'uk') {
         window.routeLayerUK.clearLayers();
         layer.eachLayer(l => window.routeLayerUK.addLayer(l));
-        if (layer.getBounds().isValid()) mapUK.fitBounds(layer.getBounds());
+        if (layer.getBounds().isValid()) mapUK.fitBounds(layer.getBounds(), padding);
         window.currentRouteIndex.uk = Number(idx);
     } else {
         window.routeLayerWorld.clearLayers();
         layer.eachLayer(l => window.routeLayerWorld.addLayer(l));
-        if (layer.getBounds().isValid()) mapWorld.fitBounds(layer.getBounds());
+        if (layer.getBounds().isValid()) mapWorld.fitBounds(layer.getBounds(), padding);
         window.currentRouteIndex.world = Number(idx);
     }
     showRouteInfo(routes[idx].name, layer);
