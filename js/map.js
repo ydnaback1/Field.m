@@ -81,7 +81,7 @@ addWorldControls(mapWorld);
 const ukDrawOpts = {
   draw: {
     polyline: {
-      shapeOptions: { color: "#ff00f7", weight: 5 },
+      shapeOptions: { color: "#FF9500", weight: 5 },
       touchExtend: false,
       finishOnDoubleClick: false
     },
@@ -107,6 +107,7 @@ const worldDrawOpts = {
   }
 };
 
+// --- Panel, FAB, and Draw Control State ---
 const fab = document.getElementById('fab-route');
 const panel = document.getElementById('bottom-panel');
 const fabIcon = fab.querySelector('i');
@@ -114,26 +115,17 @@ const drawToolbarContainer = document.getElementById('draw-toolbar-container');
 const panelContent = document.getElementById('panel-content');
 let activeDrawControl = null;
 
-fab.onclick = function() {
-  const isOpen = panel.classList.toggle('open');
-  fab.classList.toggle('panel-open', isOpen);
-  fabIcon.className = isOpen ? 'fas fa-xmark' : 'fas fa-route';
-  if (isOpen) {
-    showRoutePanelContent();
-    addDrawToolbar();
-  } else {
-    panelContent.innerHTML = '';
-    removeDrawToolbar();
-  }
-};
+let drawingMode = false;
+let editingMode = false;
 
-
+// --- Panel Main Function ---
 function showRoutePanelContent() {
   const mode = window.currentMode || 'uk';
   const routes = window.getRouteList(mode);
   const idx = window.currentRouteIndex[mode];
   const currentRoute = (typeof idx === "number" && routes[idx]) ? routes[idx] : {};
   const name = currentRoute.name || 'No route selected';
+
   let km = "", mi = "";
   if (currentRoute.geojson) {
     const layer = L.geoJSON(currentRoute.geojson);
@@ -149,6 +141,7 @@ function showRoutePanelContent() {
     km = (totalMeters / 1000).toFixed(2);
     mi = (totalMeters / 1609.344).toFixed(2);
   }
+
   let timeStr = "";
   if (km) {
     let totalMin = Math.round((km / 5) * 60);
@@ -161,22 +154,35 @@ function showRoutePanelContent() {
     }
   }
 
-panelContent.innerHTML = `
-  <div style="font-size: 1.28em; font-weight: bold; margin-bottom: 10px;">${name}</div>
-  <div class="metric-row">
-    ${km ? `<span class="metric-pill"><i class="fa-solid fa-person-walking"></i> ${km} km / ${mi} mi</span>` : ""}
-    ${timeStr ? `<span class="metric-pill"><i class="fa-solid fa-stopwatch"></i> ${timeStr}</span>` : ""}
-  </div>
-  <div>
-    <select id="route-list-panel"></select>
-  </div>
-  <button id="add-route-panel">Draw New Route</button>
-  <div class="route-actions-row">
-    <button id="load-route-panel" style="margin-right:8px;">Load</button>
-    <button id="delete-route-panel" style="margin-left:8px;">Delete</button>
-  </div>
-`;
+  // Context-aware primary action button
+  let actionButtonHtml = '';
+  if (drawingMode) {
+    actionButtonHtml = `<button id="save-route-panel" class="primary-action">Save</button>`;
+  } else if (editingMode) {
+    actionButtonHtml = `<button id="save-edit-route-panel" class="primary-action">Save</button>`;
+  } else if (currentRoute.geojson) {
+    actionButtonHtml = `<button id="edit-route-panel" class="primary-action">Edit</button>`;
+  } else {
+    actionButtonHtml = `<button id="add-route-panel" class="primary-action">Draw New Route</button>`;
+  }
 
+  panelContent.innerHTML = `
+    <div style="font-size: 1.08em; font-weight: bold; margin-bottom: 10px;">${name}</div>
+    <div class="metric-row" style="font-size: 1em;">
+      ${km ? `<span class="metric-pill"><i class="fa-solid fa-person-walking"></i> ${km} km / ${mi} mi</span>` : ""}
+      ${timeStr ? `<span class="metric-pill"><i class="fa-solid fa-stopwatch"></i> ${timeStr}</span>` : ""}
+    </div>
+    <div>
+      <select id="route-list-panel"></select>
+    </div>
+    ${actionButtonHtml}
+    <div class="route-actions-row">
+      <button id="load-route-panel">Load</button>
+      <button id="delete-route-panel">Delete</button>
+    </div>
+  `;
+
+  // Populate route list
   const sel = panelContent.querySelector('#route-list-panel');
   routes.forEach((r, i) => {
     let opt = document.createElement('option');
@@ -184,10 +190,15 @@ panelContent.innerHTML = `
     opt.textContent = r.name;
     sel.appendChild(opt);
   });
+  if (typeof idx === "number") sel.value = idx;
+
+  // Load/Delete handlers
   panelContent.querySelector('#load-route-panel').onclick = function() {
     const idx = sel.value;
     if (idx === '' || idx === null) return;
     window.loadRouteByIndex(mode, idx);
+    drawingMode = false;
+    editingMode = false;
     showRoutePanelContent();
   };
   panelContent.querySelector('#delete-route-panel').onclick = function() {
@@ -197,15 +208,61 @@ panelContent.innerHTML = `
     window.updateRouteListUI(mode);
     if (mode === 'uk') window.routeLayerUK.clearLayers();
     else window.routeLayerWorld.clearLayers();
+    drawingMode = false;
+    editingMode = false;
     showRoutePanelContent();
   };
-  // New route draw button
-  panelContent.querySelector('#add-route-panel').onclick = function() {
-    document.querySelector('.leaflet-draw-draw-polyline').click();
-  };
+
+  // Main button handlers
+  const addBtn = panelContent.querySelector('#add-route-panel');
+  if (addBtn) {
+    addBtn.onclick = function() {
+      drawingMode = true;
+      editingMode = false;
+      showRoutePanelContent();
+      document.querySelector('.leaflet-draw-draw-polyline').click();
+    };
+  }
+  const saveBtn = panelContent.querySelector('#save-route-panel');
+  if (saveBtn) {
+    saveBtn.onclick = function() {
+      const map = (mode === 'uk') ? mapUK : mapWorld;
+      const drawControl = activeDrawControl;
+      if (drawControl && drawControl._toolbars && drawControl._toolbars.draw) {
+        drawControl._toolbars.draw._modes.polyline.handler.completeShape();
+        drawControl._toolbars.draw._modes.polyline.handler.disable();
+      }
+      drawingMode = false;
+      showRoutePanelContent();
+    };
+  }
+  const editBtn = panelContent.querySelector('#edit-route-panel');
+  if (editBtn) {
+    editBtn.onclick = function() {
+      editingMode = true;
+      drawingMode = false;
+      showRoutePanelContent();
+      const drawControl = activeDrawControl;
+      if (drawControl && drawControl._toolbars && drawControl._toolbars.edit) {
+        drawControl._toolbars.edit._modes.edit.handler.enable();
+      }
+    };
+  }
+  const saveEditBtn = panelContent.querySelector('#save-edit-route-panel');
+  if (saveEditBtn) {
+    saveEditBtn.onclick = function() {
+      const drawControl = activeDrawControl;
+      if (drawControl && drawControl._toolbars && drawControl._toolbars.edit) {
+        drawControl._toolbars.edit._modes.edit.handler.save();
+        drawControl._toolbars.edit._modes.edit.handler.disable();
+      }
+      editingMode = false;
+      showRoutePanelContent();
+    };
+  }
 }
 
-
+// --- Draw Toolbar Logic ---
 function addDrawToolbar() {
   if (activeDrawControl) return;
   removeDrawToolbar();
@@ -214,22 +271,19 @@ function addDrawToolbar() {
   activeDrawControl = new L.Control.Draw({
     position: 'topright',
     edit: { featureGroup: fg },
-    draw: {
-      polyline: {
-        shapeOptions: { color: "#FF9500", weight: 5 },
-        touchExtend: false,
-        finishOnDoubleClick: false
-      },
-      polygon: false, rectangle: false, circle: false, marker: false, circlemarker: false
-    }
+    draw: (mode === 'uk') ? ukDrawOpts.draw : worldDrawOpts.draw
   });
   (mode === 'uk' ? mapUK : mapWorld).addControl(activeDrawControl);
   setTimeout(() => {
+    // Move only the latest toolbar to the custom panel
     const toolbar = document.querySelector('.leaflet-draw-toolbar');
     if (toolbar && drawToolbarContainer) drawToolbarContainer.appendChild(toolbar);
+    // Remove any floating toolbar
+    document.querySelectorAll('.leaflet-draw-toolbar').forEach(tb => {
+      if (!drawToolbarContainer.contains(tb)) tb.remove();
+    });
   }, 100);
 }
-
 function removeDrawToolbar() {
   if (activeDrawControl) {
     const mode = window.currentMode || 'uk';
@@ -239,47 +293,106 @@ function removeDrawToolbar() {
   if (drawToolbarContainer.firstChild) {
     drawToolbarContainer.innerHTML = '';
   }
+  document.querySelectorAll('.leaflet-draw-toolbar').forEach(tb => {
+    if (!drawToolbarContainer.contains(tb)) tb.remove();
+  });
 }
 
+// --- FAB/panel toggle ---
+fab.onclick = function() {
+  const isOpen = panel.classList.toggle('open');
+  fab.classList.toggle('panel-open', isOpen);
+  fabIcon.className = isOpen ? 'fas fa-xmark' : 'fas fa-route';
+  if (isOpen) {
+    showRoutePanelContent();
+    addDrawToolbar();
+  } else {
+    panelContent.innerHTML = '';
+    removeDrawToolbar();
+    drawingMode = false;
+    editingMode = false;
+  }
+};
 
-// Route event handlers
+// --- Draw event handlers ---
 mapUK.on(L.Draw.Event.CREATED, function (e) {
+  drawingMode = false;
+  editingMode = false;
   if (e.layerType === 'polyline') {
     let name = prompt("Name this route:");
     window.routeLayerUK.clearLayers();
     if (name) {
+      // Save to storage
       window.saveRouteToList('uk', name, e.layer);
+
+      // Find index of this new route
+      const routes = window.getRouteList('uk');
+      const idx = routes.length - 1;
+      window.currentRouteIndex.uk = idx;
+
+      // Add to map
       window.routeLayerUK.addLayer(e.layer);
       window.updateRouteListUI('uk');
+
+      // Zoom to new route (with bottom panel padding)
+      if (e.layer.getBounds().isValid()) {
+        const panelHeight = 300; // or match your CSS panel height
+        mapUK.fitBounds(e.layer.getBounds(), {
+          paddingBottomRight: [0, panelHeight + 16],
+          paddingTopLeft: [0, 24]
+        });
+      }
     }
   }
+  showRoutePanelContent();
 });
+
 mapWorld.on(L.Draw.Event.CREATED, function (e) {
+  drawingMode = false;
+  editingMode = false;
   if (e.layerType === 'polyline') {
     let name = prompt("Name this route:");
     window.routeLayerWorld.clearLayers();
     if (name) {
       window.saveRouteToList('world', name, e.layer);
+      const routes = window.getRouteList('world');
+      const idx = routes.length - 1;
+      window.currentRouteIndex.world = idx;
       window.routeLayerWorld.addLayer(e.layer);
       window.updateRouteListUI('world');
+      if (e.layer.getBounds().isValid()) {
+        const panelHeight = 300;
+        mapWorld.fitBounds(e.layer.getBounds(), {
+          paddingBottomRight: [0, panelHeight + 16],
+          paddingTopLeft: [0, 24]
+        });
+      }
     }
   }
+  showRoutePanelContent();
 });
+
 mapUK.on(L.Draw.Event.EDITED, function (e) {
+  editingMode = false;
+  drawingMode = false;
   let idx = window.currentRouteIndex.uk;
   if (idx == null) return;
   e.layers.eachLayer(function(layer) {
     let geojson = layer.toGeoJSON();
     window.updateRouteInList('uk', idx, geojson);
   });
+  showRoutePanelContent();
 });
 mapWorld.on(L.Draw.Event.EDITED, function (e) {
+  editingMode = false;
+  drawingMode = false;
   let idx = window.currentRouteIndex.world;
   if (idx == null) return;
   e.layers.eachLayer(function(layer) {
     let geojson = layer.toGeoJSON();
     window.updateRouteInList('world', idx, geojson);
   });
+  showRoutePanelContent();
 });
 
 // Save map state for persistence
@@ -295,6 +408,46 @@ function saveMapState() {
 }
 mapUK.on('moveend zoomend', saveMapState);
 mapWorld.on('moveend zoomend', saveMapState);
+
+// --- Remove draw toolbar if open before switching maps ---
+window.switchMap = function(mode) {
+  let center, zoom;
+  if (activeDrawControl) removeDrawToolbar();
+  if (panel.classList.contains('open')) {
+    panel.classList.remove('open');
+    fab.classList.remove('panel-open');
+    fabIcon.className = 'fas fa-route';
+    panelContent.innerHTML = '';
+    drawingMode = false;
+    editingMode = false;
+  }
+
+  if (currentMode === 'uk') {
+    center = mapUK.getCenter();
+    zoom = mapUK.getZoom();
+    if (mode === 'world') zoom = getEquivalentWorldZoom(zoom);
+  } else {
+    center = mapWorld.getCenter();
+    zoom = mapWorld.getZoom();
+    if (mode === 'uk') zoom = getEquivalentUKZoom(zoom);
+  }
+
+  if (mode === 'world') {
+    document.getElementById('map-uk').style.display = 'none';
+    document.getElementById('map-world').style.display = 'block';
+    mapWorld.setView([center.lat, center.lng], zoom);
+    mapWorld.invalidateSize();
+    currentMode = 'world';
+  } else {
+    document.getElementById('map-uk').style.display = 'block';
+    document.getElementById('map-world').style.display = 'none';
+    mapUK.setView([center.lat, center.lng], zoom);
+    mapUK.invalidateSize();
+    currentMode = 'uk';
+  }
+  updateGlobeIcon();
+  saveMapState();
+};
 
 // Update globe icon color based on currentMode
 function updateGlobeIcon() {
