@@ -107,6 +107,22 @@ const worldDrawOpts = {
   }
 };
 
+if (L.Draw.Polyline) {
+  L.Draw.Polyline.include({
+    _onTouch: function(e) {
+      // Only allow double-tap to finish if more than 2 points (i.e., after 3rd point)
+      if (this._markers.length < 2) {
+        // Prevent default Leaflet Draw double-tap behavior when only one segment
+        e.preventDefault();
+        return false;
+      }
+      // Otherwise, fallback to default (which allows finish)
+      return L.Handler.prototype._onTouch.call(this, e);
+    }
+  });
+}
+
+
 // --- Panel, FAB, and Draw Control State ---
 const fab = document.getElementById('fab-route');
 const panel = document.getElementById('bottom-panel');
@@ -148,41 +164,42 @@ function showRoutePanelContent() {
     if (totalMin >= 60) {
       const hours = Math.floor(totalMin / 60);
       const mins = totalMin % 60;
-      timeStr = `${hours}h${mins > 0 ? ` ${mins}m` : ""}`;
+      timeStr = `${hours}h ${mins > 0 ? `${mins}m` : ""}`;
     } else {
       timeStr = `${totalMin}m`;
     }
   }
 
-  // Context-aware primary action button
+  // --- Action Buttons as Icons ---
   let actionButtonHtml = '';
   if (drawingMode) {
-    actionButtonHtml = `<button id="save-route-panel" class="primary-action">Save</button>`;
+    actionButtonHtml = `<button id="save-route-panel" class="primary-action" aria-label="Save"><i class="fa-solid fa-check"></i></button>`;
   } else if (editingMode) {
-    actionButtonHtml = `<button id="save-edit-route-panel" class="primary-action">Save</button>`;
-  } else if (currentRoute.geojson) {
-    actionButtonHtml = `<button id="edit-route-panel" class="primary-action">Edit</button>`;
+    actionButtonHtml = `<button id="save-edit-route-panel" class="primary-action" aria-label="Save"><i class="fa-solid fa-check"></i></button>`;
   } else {
-    actionButtonHtml = `<button id="add-route-panel" class="primary-action">Draw New Route</button>`;
+    actionButtonHtml = `<button id="add-route-panel" class="primary-action" aria-label="Draw New Route"><i class="fa-solid fa-plus"></i></button>`;
+    if (currentRoute.geojson) {
+      actionButtonHtml += `<button id="edit-route-panel" class="primary-action" aria-label="Edit Route"><i class="fa-solid fa-pen-to-square"></i></button>`;
+      actionButtonHtml += `<button id="delete-route-panel" class="primary-action" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>`;
+    }
   }
 
+  // --- Panel HTML ---
   panelContent.innerHTML = `
-    <div style="font-size: 1.08em; font-weight: bold; margin-bottom: 10px;">${name}</div>
-    <div class="metric-row" style="font-size: 1em;">
+    <div class="route-title" style="font-size: 1.15em; font-weight: bold; margin-bottom: 10px;">${name}</div>
+    <div class="metric-row" style="font-size:1em;">
       ${km ? `<span class="metric-pill"><i class="fa-solid fa-person-walking"></i> ${km} km / ${mi} mi</span>` : ""}
       ${timeStr ? `<span class="metric-pill"><i class="fa-solid fa-stopwatch"></i> ${timeStr}</span>` : ""}
     </div>
     <div>
       <select id="route-list-panel"></select>
     </div>
-    ${actionButtonHtml}
     <div class="route-actions-row">
-      <button id="load-route-panel">Load</button>
-      <button id="delete-route-panel">Delete</button>
+      ${actionButtonHtml}
     </div>
   `;
 
-  // Populate route list
+  // --- Fill Dropdown ---
   const sel = panelContent.querySelector('#route-list-panel');
   routes.forEach((r, i) => {
     let opt = document.createElement('option');
@@ -192,8 +209,8 @@ function showRoutePanelContent() {
   });
   if (typeof idx === "number") sel.value = idx;
 
-  // Load/Delete handlers
-  panelContent.querySelector('#load-route-panel').onclick = function() {
+  // --- Onchange: load route on selection ---
+  sel.onchange = function() {
     const idx = sel.value;
     if (idx === '' || idx === null) return;
     window.loadRouteByIndex(mode, idx);
@@ -201,28 +218,53 @@ function showRoutePanelContent() {
     editingMode = false;
     showRoutePanelContent();
   };
-  panelContent.querySelector('#delete-route-panel').onclick = function() {
-    const idx = sel.value;
-    if (idx === '' || idx === null) return;
-    window.deleteRouteFromList(mode, idx);
-    window.updateRouteListUI(mode);
-    if (mode === 'uk') window.routeLayerUK.clearLayers();
-    else window.routeLayerWorld.clearLayers();
-    drawingMode = false;
-    editingMode = false;
-    showRoutePanelContent();
-  };
 
-  // Main button handlers
+  // --- Draw New Route ---
   const addBtn = panelContent.querySelector('#add-route-panel');
   if (addBtn) {
     addBtn.onclick = function() {
       drawingMode = true;
       editingMode = false;
       showRoutePanelContent();
-      document.querySelector('.leaflet-draw-draw-polyline').click();
+      const map = (mode === 'uk') ? mapUK : mapWorld;
+      const drawControl = activeDrawControl;
+      if (drawControl && drawControl._toolbars && drawControl._toolbars.draw) {
+        drawControl._toolbars.draw._modes.polyline.handler.enable();
+      }
     };
   }
+
+  // --- Edit ---
+  const editBtn = panelContent.querySelector('#edit-route-panel');
+  if (editBtn) {
+    editBtn.onclick = function() {
+      editingMode = true;
+      drawingMode = false;
+      showRoutePanelContent();
+      const drawControl = activeDrawControl;
+      if (drawControl && drawControl._toolbars && drawControl._toolbars.edit) {
+        drawControl._toolbars.edit._modes.edit.handler.enable();
+      }
+    };
+  }
+
+  // --- Delete ---
+  const delBtn = panelContent.querySelector('#delete-route-panel');
+  if (delBtn) {
+    delBtn.onclick = function() {
+      const idx = sel.value;
+      if (idx === '' || idx === null) return;
+      window.deleteRouteFromList(mode, idx);
+      window.updateRouteListUI(mode);
+      if (mode === 'uk') window.routeLayerUK.clearLayers();
+      else window.routeLayerWorld.clearLayers();
+      drawingMode = false;
+      editingMode = false;
+      showRoutePanelContent();
+    };
+  }
+
+  // --- Save (drawing mode) ---
   const saveBtn = panelContent.querySelector('#save-route-panel');
   if (saveBtn) {
     saveBtn.onclick = function() {
@@ -236,16 +278,34 @@ function showRoutePanelContent() {
       showRoutePanelContent();
     };
   }
-  const editBtn = panelContent.querySelector('#edit-route-panel');
-  if (editBtn) {
-    editBtn.onclick = function() {
-      editingMode = true;
-      drawingMode = false;
-      showRoutePanelContent();
+
+  // --- Save Edit ---
+  const saveEditBtn = panelContent.querySelector('#save-edit-route-panel');
+  if (saveEditBtn) {
+    saveEditBtn.onclick = function() {
       const drawControl = activeDrawControl;
       if (drawControl && drawControl._toolbars && drawControl._toolbars.edit) {
-        drawControl._toolbars.edit._modes.edit.handler.enable();
+        drawControl._toolbars.edit._modes.edit.handler.save();
+        drawControl._toolbars.edit._modes.edit.handler.disable();
       }
+      editingMode = false;
+      showRoutePanelContent();
+    };
+  }
+}
+
+  // Save button
+  const saveBtn = panelContent.querySelector('#save-route-panel');
+  if (saveBtn) {
+    saveBtn.onclick = function() {
+      const map = (mode === 'uk') ? mapUK : mapWorld;
+      const drawControl = activeDrawControl;
+      if (drawControl && drawControl._toolbars && drawControl._toolbars.draw) {
+        drawControl._toolbars.draw._modes.polyline.handler.completeShape();
+        drawControl._toolbars.draw._modes.polyline.handler.disable();
+      }
+      drawingMode = false;
+      showRoutePanelContent();
     };
   }
   const saveEditBtn = panelContent.querySelector('#save-edit-route-panel');
@@ -260,7 +320,7 @@ function showRoutePanelContent() {
       showRoutePanelContent();
     };
   }
-}
+
 
 // --- Draw Toolbar Logic ---
 function addDrawToolbar() {
