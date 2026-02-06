@@ -49,7 +49,12 @@ body {
   background: rgba(255, 226, 197, 0.96) !important;
 }
 .leaflet-control-custom i.fas.fa-globe {
-  font-size: 1.5em;
+  font-size: 1.4em;
+  color: currentColor;
+}
+.leaflet-control-custom:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 22px rgba(10, 12, 20, 0.25);
 }
 .leaflet-control-custom:hover {
   transform: translateY(-1px);
