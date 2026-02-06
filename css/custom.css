@@ -19,7 +19,6 @@ body {
   --accent-strong: #f05a00;
   --text-dark: #0b0c10;
   --text-light: #f4f7ff;
-  --icon-color: rgba(20, 23, 30, 0.92);
   --shadow-soft: 0 10px 24px rgba(10, 12, 20, 0.22);
   --shadow-strong: 0 18px 36px rgba(10, 12, 20, 0.35);
 }
@@ -35,7 +34,7 @@ body {
 
 .leaflet-control-custom {
   background: var(--surface-light);
-  color: var(--icon-color);
+  color: var(--text-dark);
   box-shadow: var(--shadow-soft);
   border-radius: 6px;
   width: 36px;
@@ -49,11 +48,14 @@ body {
 .leaflet-control-custom.active,
 .globe-btn.active {
   background: rgba(255, 226, 197, 0.96) !important;
-  color: var(--accent);
 }
 .leaflet-control-custom i.fas.fa-globe {
   font-size: 1.4em;
   color: currentColor;
+}
+.leaflet-control-custom:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 22px rgba(10, 12, 20, 0.25);
 }
 .leaflet-control-custom:hover {
   transform: translateY(-1px);
@@ -241,7 +243,7 @@ body {
   height: 54px;
   border-radius: 18px;
   background: var(--surface-light);
-  color: var(--icon-color);
+  color: var(--text-dark);
   border: none;
   box-shadow: var(--shadow-soft);
   z-index: 1300;
@@ -256,7 +258,7 @@ body {
 #fab-route.panel-open {
   bottom: 328px;  /* panel height + 8px */
   background: var(--surface-dark-strong);
-  color: var(--icon-color);
+  color: var(--text-light);
 }
 #fab-route i.fa-xmark { font-size: 1em; }
 #fab-route:hover {
@@ -278,7 +280,7 @@ body {
   border-radius: 6px;
   box-shadow: var(--shadow-soft);
   position: relative;
-  color: var(--icon-color) !important;
+  color: var(--text-dark) !important;
   border: none !important;
   box-sizing: border-box;
 }
@@ -287,7 +289,7 @@ body {
   font-weight: 900;
   content: "\f5fd";
   font-size: 1.6em;
-  color: currentColor; 
+  color: var(--text-dark); 
   display: block;
   line-height: 1;
   margin: auto;
@@ -312,134 +314,12 @@ body {
   background-image: none !important;
 }
 
-.leaflet-bar a,
-.leaflet-control-custom,
-.leaflet-control-layers-toggle {
-  width: 36px;
-  height: 36px;
-  box-sizing: border-box;
-}
-
 .leaflet-bar a {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface-light);
-  color: var(--icon-color);
-  border: none;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .leaflet-bar a:hover {
   transform: translateY(-1px);
   box-shadow: 0 12px 22px rgba(10, 12, 20, 0.22);
-}
-
-.leaflet-bar a::before,
-.leaflet-control-locate a::before,
-.leaflet-measure-toggle::before {
-  font-family: "Font Awesome 6 Free";
-  font-weight: 900;
-  color: currentColor;
-}
-
-.leaflet-control-zoom-in span,
-.leaflet-control-zoom-out span,
-.leaflet-control-locate-location-arrow {
-  display: none;
-}
-
-.leaflet-control-zoom-in::before {
-  content: "\f067";
-  font-size: 1em;
-}
-
-.leaflet-control-zoom-out::before {
-  content: "\f068";
-  font-size: 1em;
-}
-
-.leaflet-control-locate a::before {
-  content: "\f124";
-  font-size: 1em;
-}
-
-.leaflet-draw-toolbar a {
-  border-radius: 8px;
-  box-shadow: var(--shadow-soft);
-}
-
-.leaflet-draw-toolbar a:hover {
-  background: rgba(255, 255, 255, 0.85);
-}
-
-.leaflet-draw-toolbar .leaflet-draw-draw-polygon,
-.leaflet-draw-toolbar .leaflet-draw-draw-polyline,
-.leaflet-draw-toolbar .leaflet-draw-draw-rectangle,
-.leaflet-draw-toolbar .leaflet-draw-draw-circle,
-.leaflet-draw-toolbar .leaflet-draw-draw-marker,
-.leaflet-draw-toolbar .leaflet-draw-edit-edit,
-.leaflet-draw-toolbar .leaflet-draw-edit-remove {
-  color: var(--text-dark);
-}
-
-.leaflet-control-measure {
-  background: transparent;
-}
-
-.leaflet-measure-toggle {
-  background-image: none !important;
-  text-indent: 0 !important;
-  color: var(--icon-color);
-  overflow: visible !important;
-  white-space: normal !important;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  box-shadow: var(--shadow-soft);
-  border-radius: 8px;
-  box-sizing: border-box;
-}
-
-.leaflet-measure-toggle::before {
-  content: "\f545";
-  font-size: 1.1em;
-}
-
-.leaflet-control-layers {
-  box-shadow: none;
-}
-
-.leaflet-control-layers-list {
-  padding: 12px;
-  background: var(--surface-light);
-  color: var(--text-dark);
-  border-radius: 12px;
-  box-shadow: var(--shadow-strong);
-  min-width: 220px;
-  backdrop-filter: blur(14px);
-}
-
-.leaflet-control-layers-list label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.leaflet-control-layers-list label:hover {
-  background: rgba(255, 255, 255, 0.6);
-}
-
-.leaflet-control-layers-list input[type="radio"],
-.leaflet-control-layers-list input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  margin: 0 2px 0 0;
 }
 
 @keyframes pulse-glow {
@@ -553,7 +433,6 @@ body {
     --surface-dark-strong: rgba(6, 7, 9, 0.98);
     --text-dark: #f5f7ff;
     --text-light: #f5f7ff;
-    --icon-color: rgba(244, 247, 255, 0.95);
     --shadow-soft: 0 12px 28px rgba(0, 0, 0, 0.55);
     --shadow-strong: 0 20px 40px rgba(0, 0, 0, 0.7);
   }
@@ -561,26 +440,6 @@ body {
   .leaflet-control-custom.active,
   .globe-btn.active {
     background: rgba(255, 145, 48, 0.25) !important;
-  }
-
-  .leaflet-control-custom,
-  .leaflet-control-layers-toggle,
-  .leaflet-bar a {
-    background: var(--surface-light);
-    color: var(--icon-color);
-  }
-
-  .leaflet-control-custom i.fas.fa-globe {
-    color: currentColor;
-  }
-
-  .leaflet-control-layers-list {
-    background: var(--surface-dark);
-    color: var(--text-light);
-  }
-
-  .leaflet-control-layers-list label:hover {
-    background: rgba(255, 255, 255, 0.08);
   }
 
   #panel-content select,
@@ -602,21 +461,5 @@ body {
 
   .secondary-action:hover {
     background: rgba(255, 255, 255, 0.2);
-  }
-
-  .leaflet-draw-toolbar a {
-    background: rgba(19, 21, 28, 0.92);
-    color: var(--icon-color);
-    border-color: rgba(255, 255, 255, 0.18);
-  }
-
-  .leaflet-draw-toolbar a:hover {
-    background: rgba(30, 34, 44, 0.9);
-  }
-
-  .leaflet-measure-toggle {
-    background: rgba(19, 21, 28, 0.92);
-    color: var(--icon-color);
-    box-shadow: var(--shadow-soft);
   }
 }
