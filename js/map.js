@@ -25,6 +25,8 @@ function transformCoords(arr) {
 }
 var ukInitialCenter = transformCoords([374288, 442016]);
 var ukInitialZoom = 7;
+var worldInitialCenter = ukInitialCenter;
+var worldInitialZoom = getEquivalentWorldZoom(ukInitialZoom);
 
 // Restore last map state if available
 let savedMode = localStorage.getItem('lastMode');
@@ -33,8 +35,14 @@ let savedZoom = localStorage.getItem('lastZoom');
 if (savedCenter && savedZoom) {
   try {
     savedCenter = JSON.parse(savedCenter);
-    ukInitialCenter = savedCenter;
-    ukInitialZoom = Number(savedZoom);
+    savedZoom = Number(savedZoom);
+    if (savedMode === 'world') {
+      worldInitialCenter = savedCenter;
+      worldInitialZoom = savedZoom;
+    } else {
+      ukInitialCenter = savedCenter;
+      ukInitialZoom = savedZoom;
+    }
   } catch (e) {}
 }
 var currentMode = savedMode || 'uk';
@@ -46,7 +54,8 @@ var bngcrs = new L.Proj.CRS('EPSG:27700',
   '+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 ' +
   '+ellps=airy +towgs84=446.448,-125.157,542.06,0.15,0.247,0.842,-20.489 +units=m +no_defs', {
     resolutions: [896, 448, 224, 112, 56, 28, 14, 7, 3.5, 1.75, 0.875, 0.4375, 0.21875, 0.109375],
-    origin: [-238375, 1376256]
+    origin: [-238375, 1376256],
+    bounds: L.bounds([0, 0], [700000, 1300000])
   }
 );
 
@@ -58,8 +67,8 @@ var mapUK = L.map('map-uk', {
   attributionControl: false
 });
 var mapWorld = L.map('map-world', {
-  center: ukInitialCenter,
-  zoom: getEquivalentWorldZoom(ukInitialZoom),
+  center: worldInitialCenter,
+  zoom: worldInitialZoom,
   attributionControl: false
 });
 
@@ -293,34 +302,6 @@ function showRoutePanelContent() {
     };
   }
 }
-
-  // Save button
-  const saveBtn = panelContent.querySelector('#save-route-panel');
-  if (saveBtn) {
-    saveBtn.onclick = function() {
-      const map = (mode === 'uk') ? mapUK : mapWorld;
-      const drawControl = activeDrawControl;
-      if (drawControl && drawControl._toolbars && drawControl._toolbars.draw) {
-        drawControl._toolbars.draw._modes.polyline.handler.completeShape();
-        drawControl._toolbars.draw._modes.polyline.handler.disable();
-      }
-      drawingMode = false;
-      showRoutePanelContent();
-    };
-  }
-  const saveEditBtn = panelContent.querySelector('#save-edit-route-panel');
-  if (saveEditBtn) {
-    saveEditBtn.onclick = function() {
-      const drawControl = activeDrawControl;
-      if (drawControl && drawControl._toolbars && drawControl._toolbars.edit) {
-        drawControl._toolbars.edit._modes.edit.handler.save();
-        drawControl._toolbars.edit._modes.edit.handler.disable();
-      }
-      editingMode = false;
-      showRoutePanelContent();
-    };
-  }
-
 
 // --- Draw Toolbar Logic ---
 function addDrawToolbar() {
