@@ -314,9 +314,131 @@ body {
   background-image: none !important;
 }
 
-.leaflet-bar a {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+.leaflet-bar a,
+.leaflet-control-custom,
+.leaflet-control-layers-toggle,
+.leaflet-measure-toggle {
+  width: 36px;
+  height: 36px;
+  box-sizing: border-box;
 }
+
+.leaflet-bar a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-light);
+  color: var(--text-dark);
+  border: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.leaflet-bar a::before,
+.leaflet-control-locate a::before,
+.leaflet-measure-toggle::before {
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  color: currentColor;
+}
+
+.leaflet-control-zoom-in span,
+.leaflet-control-zoom-out span,
+.leaflet-control-locate-location-arrow {
+  display: none;
+}
+
+.leaflet-control-zoom-in::before {
+  content: "\f067";
+  font-size: 1em;
+}
+
+.leaflet-control-zoom-out::before {
+  content: "\f068";
+  font-size: 1em;
+}
+
+.leaflet-control-locate a::before {
+  content: "\f124";
+  font-size: 1em;
+}
+
+.leaflet-control-locate.requesting a::before,
+.leaflet-control-locate.active a::before,
+.leaflet-control-locate.following a::before {
+  content: none;
+}
+
+.leaflet-control-locate.requesting .leaflet-control-locate-location-arrow,
+.leaflet-control-locate.active .leaflet-control-locate-location-arrow,
+.leaflet-control-locate.following .leaflet-control-locate-location-arrow {
+  display: inline-block;
+}
+
+.leaflet-control-measure {
+  background: transparent;
+}
+
+.leaflet-measure-toggle {
+  background-image: none !important;
+  text-indent: 0 !important;
+  overflow: visible !important;
+  white-space: normal !important;
+  color: var(--text-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-soft);
+  border-radius: 8px;
+}
+
+.leaflet-measure-toggle::before {
+  content: "\f545";
+  font-size: 1.1em;
+}
+
+.leaflet-control-layers {
+  box-shadow: none;
+}
+
+.leaflet-control-layers-list {
+  padding: 12px;
+  background: var(--surface-light);
+  color: var(--text-dark);
+  border-radius: 12px;
+  box-shadow: var(--shadow-strong);
+  min-width: 220px;
+  backdrop-filter: blur(14px);
+}
+
+.leaflet-control-layers-list label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.leaflet-control-layers-list label:hover {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.leaflet-control-layers-list input[type="radio"],
+.leaflet-control-layers-list input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0 2px 0 0;
+}
+
+.leaflet-top .leaflet-control {
+  margin-top: 12px;
+}
+
+.leaflet-top .leaflet-control:first-child {
+  margin-top: 0;
+}
+
 .leaflet-bar a:hover {
   transform: translateY(-1px);
   box-shadow: 0 12px 22px rgba(10, 12, 20, 0.22);
@@ -442,6 +564,26 @@ body {
     background: rgba(255, 145, 48, 0.25) !important;
   }
 
+  .leaflet-control-custom,
+  .leaflet-control-layers-toggle,
+  .leaflet-bar a {
+    background: var(--surface-light);
+    color: var(--text-light);
+  }
+
+  .leaflet-control-custom i.fas.fa-globe {
+    color: var(--text-light);
+  }
+
+  .leaflet-control-layers-list {
+    background: var(--surface-dark);
+    color: var(--text-light);
+  }
+
+  .leaflet-control-layers-list label:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
   #panel-content select,
   #panel-content button {
     background: rgba(22, 24, 30, 0.92);
@@ -461,5 +603,68 @@ body {
 
   .secondary-action:hover {
     background: rgba(255, 255, 255, 0.2);
+  }
+
+  .leaflet-measure-toggle {
+    background: rgba(19, 21, 28, 0.92);
+    color: var(--text-light);
+    box-shadow: var(--shadow-soft);
+  }
+}
+
+/* --- Strong Leaflet Control Overrides --- */
+.leaflet-container .leaflet-bar a,
+.leaflet-container .leaflet-control-custom,
+.leaflet-container .leaflet-control-layers-toggle,
+.leaflet-container .leaflet-measure-toggle,
+.leaflet-container .leaflet-control-locate a,
+.leaflet-container .leaflet-draw-toolbar a {
+  width: 36px !important;
+  height: 36px !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  background: var(--surface-light) !important;
+  color: var(--text-dark) !important;
+  border: none !important;
+  border-bottom: none !important;
+  box-shadow: var(--shadow-soft) !important;
+}
+
+.leaflet-container .leaflet-bar a + a {
+  margin-top: 8px !important;
+}
+
+.leaflet-container .leaflet-bar {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.leaflet-container .leaflet-bar a {
+  border-radius: 8px !important;
+}
+
+.leaflet-container .leaflet-control-layers-expanded .leaflet-control-layers-toggle {
+  background: none !important;
+  box-shadow: none !important;
+}
+
+.leaflet-container .leaflet-bar a::before,
+.leaflet-container .leaflet-control-locate a::before,
+.leaflet-container .leaflet-measure-toggle::before {
+  color: currentColor !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .leaflet-container .leaflet-bar a,
+  .leaflet-container .leaflet-control-custom,
+  .leaflet-container .leaflet-control-layers-toggle,
+  .leaflet-container .leaflet-measure-toggle,
+  .leaflet-container .leaflet-control-locate a,
+  .leaflet-container .leaflet-draw-toolbar a {
+    background: var(--surface-light) !important;
+    color: var(--text-light) !important;
   }
 }
