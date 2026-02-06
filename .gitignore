@@ -1,2 +1,4 @@
 # Ignore local API config
-config.js
+.DS_Store
+config.local.js
+config.runtime.js
