@@ -685,12 +685,8 @@ function updateGlobeIcon() {
   if (!svg) return;
   if (currentMode === 'world') {
     globeControl.classList.add('active');
-    if (svg.tagName === 'svg') svg.style.stroke = '#FF9500';
-    else svg.style.color = '#FF9500';
   } else {
     globeControl.classList.remove('active');
-    if (svg.tagName === 'svg') svg.style.stroke = '#000000';
-    else svg.style.color = '#000000';
   }
 }
 

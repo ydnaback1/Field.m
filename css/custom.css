@@ -37,8 +37,9 @@ body {
   color: var(--text-dark);
   box-shadow: var(--shadow-soft);
   border-radius: 6px;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -281,6 +282,7 @@ body {
   position: relative;
   color: var(--text-dark) !important;
   border: none !important;
+  box-sizing: border-box;
 }
 .leaflet-control-layers-toggle::before {
   font-family: "Font Awesome 6 Free";
@@ -304,7 +306,7 @@ body {
 .leaflet-control-layers-toggle:focus,
 .leaflet-control-layers-toggle:active,
 .leaflet-control-layers-toggle:hover {
-  color: transparent !important;   
+  color: var(--icon-color) !important;   
   border: none !important;
   border-bottom: none !important;
   box-shadow: var(--shadow-soft) !important;
