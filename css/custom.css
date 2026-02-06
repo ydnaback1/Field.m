@@ -7,10 +7,13 @@ html, body {
   padding: 0;
   background: #eef;
 }
+
 body {
   font-family: "Space Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   color: #101218;
 }
+
+/* Theme tokens */
 :root {
   --surface-dark: rgba(20, 23, 30, 0.92);
   --surface-dark-strong: rgba(14, 16, 20, 0.98);
@@ -21,7 +24,10 @@ body {
   --text-light: #f4f7ff;
   --shadow-soft: 0 10px 24px rgba(10, 12, 20, 0.22);
   --shadow-strong: 0 18px 36px rgba(10, 12, 20, 0.35);
+  /* icon rule */
+  --icon-color: rgba(20, 23, 30, 0.92);
 }
+
 #map-uk, #map-world {
   width: 100vw;
   height: 100vh;
@@ -32,6 +38,7 @@ body {
 }
 #map-world { display: none; }
 
+/* --- Custom globe control --- */
 .leaflet-control-custom {
   background: var(--surface-light);
   color: var(--text-dark);
@@ -45,28 +52,26 @@ body {
   justify-content: center;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
+
 .leaflet-control-custom.active,
 .globe-btn.active {
   background: rgba(255, 226, 197, 0.96) !important;
 }
+
 .leaflet-control-custom i.fas.fa-globe {
   font-size: 1.4em;
-  color: currentColor;
+  color: currentColor !important; /* beats inline color */
 }
+
 .leaflet-control-custom:hover {
   transform: translateY(-1px);
   box-shadow: 0 12px 22px rgba(10, 12, 20, 0.25);
 }
-.leaflet-control-custom:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 12px 22px rgba(10, 12, 20, 0.25);
-}
-.leaflet-draw-toolbar {
-  display: none !important;
-}
-.leaflet-draw-section {
-  display: none 
-}
+
+/* If you intentionally hide the default draw toolbar, keep these */
+.leaflet-draw-toolbar { display: none !important; }
+.leaflet-draw-section { display: none; }
+
 /* --- Bottom Panel --- */
 #bottom-panel {
   position: fixed;
@@ -74,8 +79,8 @@ body {
   right: 0;
   bottom: -320px;
   max-width: 460px;
-  max-height: 75vh; /* prevents it from taking the whole screen on mobile */
-  min-height: 80px; /* optional: for aesthetic if nearly empty */
+  max-height: 75vh;
+  min-height: 80px;
   margin: auto;
   background: var(--surface-dark);
   color: var(--text-light);
@@ -89,6 +94,7 @@ body {
   backdrop-filter: blur(16px);
 }
 #bottom-panel.open { bottom: 0; }
+
 #panel-drag {
   width: 56px;
   height: 7px;
@@ -97,6 +103,7 @@ body {
   margin: 12px auto 12px auto;
   box-shadow: 0 2px 8px rgba(0,0,0,0.13);
 }
+
 #panel-content {
   flex: 1 1 auto;
   overflow-y: auto;
@@ -114,6 +121,7 @@ body {
   gap: 22px;
   margin-bottom: 18px;
 }
+
 .metric-pill {
   display: flex;
   align-items: center;
@@ -125,6 +133,7 @@ body {
   font-weight: 500;
   backdrop-filter: blur(6px);
 }
+
 #panel-content .fa-person-walking,
 #panel-content .fa-stopwatch {
   color: var(--accent);
@@ -144,21 +153,25 @@ body {
   transition: box-shadow .12s;
   box-sizing: border-box;
 }
+
 #panel-content select {
   display: block;
   margin-left: auto;
   margin-right: auto;
 }
+
 #panel-content select:disabled {
   background: rgba(255, 255, 255, 0.7);
   color: #4f5665;
   cursor: not-allowed;
 }
+
 .panel-empty {
   margin-top: 8px;
   font-size: 0.95em;
   color: rgba(244, 247, 255, 0.74);
 }
+
 .primary-action, .route-actions-row button {
   background: linear-gradient(135deg, #ffb155, #ff7a00);
   color: #1b1004;
@@ -176,6 +189,7 @@ body {
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   cursor: pointer;
 }
+
 .primary-action:hover, .route-actions-row button:hover {
   background: linear-gradient(135deg, #ffa84b, #f05a00);
 }
@@ -188,6 +202,7 @@ body {
   margin-top: 12px;
   width: 100%;
 }
+
 .secondary-actions-row {
   display: flex;
   flex-wrap: wrap;
@@ -195,6 +210,7 @@ body {
   gap: 10px;
   margin-top: 12px;
 }
+
 .secondary-action {
   background: rgba(255, 255, 255, 0.18);
   color: var(--text-light);
@@ -208,10 +224,12 @@ body {
   cursor: pointer;
   transition: background 0.2s, border-color 0.2s;
 }
+
 .secondary-action:hover {
   background: rgba(255, 255, 255, 0.3);
   border-color: rgba(255, 255, 255, 0.5);
 }
+
 .panel-status {
   margin-top: 8px;
   font-size: 0.85em;
@@ -255,16 +273,20 @@ body {
   outline: none;
   transition: background 0.25s, bottom 0.25s, transform 0.2s ease, box-shadow 0.2s ease;
 }
+
 #fab-route.panel-open {
-  bottom: 328px;  /* panel height + 8px */
+  bottom: 328px;
   background: var(--surface-dark-strong);
   color: var(--text-light);
 }
+
 #fab-route i.fa-xmark { font-size: 1em; }
+
 #fab-route:hover {
   transform: translateY(-2px) scale(1.02);
   box-shadow: var(--shadow-strong);
 }
+
 .fa-route {
   font-size: 1.35em;
   color: currentColor;
@@ -284,29 +306,33 @@ body {
   border: none !important;
   box-sizing: border-box;
 }
+
 .leaflet-control-layers-toggle::before {
   font-family: "Font Awesome 6 Free";
   font-weight: 900;
   content: "\f5fd";
   font-size: 1.6em;
-  color: var(--text-dark); 
+  color: currentColor;
   display: block;
   line-height: 1;
   margin: auto;
 }
+
 .leaflet-control-layers-expanded .leaflet-control-layers-toggle::before {
   display: none !important;
 }
+
 .leaflet-control-layers-expanded .leaflet-control-layers-toggle {
   background: none !important;
   box-shadow: none !important;
   border: none !important;
 }
+
 .leaflet-control-layers-toggle,
 .leaflet-control-layers-toggle:focus,
 .leaflet-control-layers-toggle:active,
 .leaflet-control-layers-toggle:hover {
-  color: var(--icon-color) !important;   
+  color: currentColor !important;
   border: none !important;
   border-bottom: none !important;
   box-shadow: var(--shadow-soft) !important;
@@ -314,6 +340,7 @@ body {
   background-image: none !important;
 }
 
+/* --- Icon swap for zoom/locate/measure --- */
 .leaflet-bar a,
 .leaflet-control-custom,
 .leaflet-control-layers-toggle,
@@ -389,22 +416,18 @@ body {
   box-shadow: 0 12px 22px rgba(10, 12, 20, 0.22);
 }
 
+/* --- Pulse animation --- */
 @keyframes pulse-glow {
-  0% {
-    box-shadow: 0 0 0 rgba(255, 122, 0, 0.0);
-  }
-  50% {
-    box-shadow: 0 0 0 8px rgba(255, 122, 0, 0.28);
-  }
-  100% {
-    box-shadow: 0 0 0 rgba(255, 122, 0, 0.0);
-  }
+  0% { box-shadow: 0 0 0 rgba(255, 122, 0, 0.0); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 122, 0, 0.28); }
+  100% { box-shadow: 0 0 0 rgba(255, 122, 0, 0.0); }
 }
 
 #fab-route.panel-open {
   animation: pulse-glow 1.6s ease-in-out infinite;
 }
 
+/* --- Responsive --- */
 @media (max-width: 768px) {
   #bottom-panel {
     max-width: 100%;
@@ -417,23 +440,11 @@ body {
     font-size: 0.98em;
   }
 
-  .metric-row {
-    flex-wrap: wrap;
-    gap: 12px;
-  }
+  .metric-row { flex-wrap: wrap; gap: 12px; }
+  .route-actions-row { gap: 16px; }
+  .secondary-actions-row { gap: 8px; }
 
-  .route-actions-row {
-    gap: 16px;
-  }
-
-  .secondary-actions-row {
-    gap: 8px;
-  }
-
-  #draw-toolbar-container {
-    right: 14px;
-    bottom: 180px;
-  }
+  #draw-toolbar-container { right: 14px; bottom: 180px; }
 
   #fab-route {
     width: 60px;
@@ -443,9 +454,7 @@ body {
     right: 16px;
   }
 
-  #fab-route.panel-open {
-    bottom: 318px;
-  }
+  #fab-route.panel-open { bottom: 318px; }
 }
 
 @media (min-width: 992px) {
@@ -458,9 +467,7 @@ body {
     box-shadow: var(--shadow-strong);
   }
 
-  #bottom-panel.open {
-    bottom: 24px;
-  }
+  #bottom-panel.open { bottom: 24px; }
 
   #panel-content {
     text-align: left;
@@ -473,10 +480,7 @@ body {
     justify-content: flex-start;
   }
 
-  #draw-toolbar-container {
-    right: 24px;
-    bottom: 240px;
-  }
+  #draw-toolbar-container { right: 24px; bottom: 240px; }
 
   #fab-route {
     left: 24px;
@@ -484,15 +488,12 @@ body {
     bottom: 24px;
   }
 
-  #fab-route.panel-open {
-    bottom: 24px;
-  }
+  #fab-route.panel-open { bottom: 24px; }
 }
 
+/* --- Dark mode --- */
 @media (prefers-color-scheme: dark) {
-  html, body {
-    background: #0b0c12;
-  }
+  html, body { background: #0b0c12; }
 
   :root {
     --surface-light: rgba(19, 21, 28, 0.95);
@@ -502,6 +503,7 @@ body {
     --text-light: #f5f7ff;
     --shadow-soft: 0 12px 28px rgba(0, 0, 0, 0.55);
     --shadow-strong: 0 20px 40px rgba(0, 0, 0, 0.7);
+    --icon-color: rgba(244, 247, 255, 0.95);
   }
 
   .leaflet-control-custom.active,
@@ -517,7 +519,7 @@ body {
   }
 
   .leaflet-control-custom i.fas.fa-globe {
-    color: var(--text-light);
+    color: currentColor !important;
   }
 
   #panel-content select,
@@ -537,9 +539,7 @@ body {
     border-color: rgba(255, 255, 255, 0.22);
   }
 
-  .secondary-action:hover {
-    background: rgba(255, 255, 255, 0.2);
-  }
+  .secondary-action:hover { background: rgba(255, 255, 255, 0.2); }
 
   .leaflet-measure-toggle {
     background: rgba(19, 21, 28, 0.92);
@@ -548,7 +548,15 @@ body {
   }
 }
 
-/* --- Strong Leaflet Control Overrides --- */
+/* --- Strong Leaflet Control Overrides (beats leaflet.css box model) --- */
+.leaflet-container .leaflet-bar,
+.leaflet-container .leaflet-control-layers,
+.leaflet-container .leaflet-control-zoom {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
 .leaflet-container .leaflet-bar a,
 .leaflet-container .leaflet-control-custom,
 .leaflet-container .leaflet-control-layers-toggle,
@@ -557,31 +565,32 @@ body {
 .leaflet-container .leaflet-draw-toolbar a {
   width: 36px !important;
   height: 36px !important;
+  line-height: 36px !important;
   box-sizing: border-box !important;
+
+  padding: 0 !important;
+  margin: 0 !important;
+
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  background: var(--surface-light) !important;
-  color: var(--text-dark) !important;
+
   border: none !important;
   border-bottom: none !important;
+  border-radius: 8px !important;
+
+  background: var(--surface-light) !important;
+  color: var(--icon-color) !important;
   box-shadow: var(--shadow-soft) !important;
+}
+
+/* remove Leaflet divider line between stacked buttons */
+.leaflet-container .leaflet-bar a:not(:last-child) {
+  border-bottom: none !important;
 }
 
 .leaflet-container .leaflet-bar a::before,
 .leaflet-container .leaflet-control-locate a::before,
 .leaflet-container .leaflet-measure-toggle::before {
   color: currentColor !important;
-}
-
-@media (prefers-color-scheme: dark) {
-  .leaflet-container .leaflet-bar a,
-  .leaflet-container .leaflet-control-custom,
-  .leaflet-container .leaflet-control-layers-toggle,
-  .leaflet-container .leaflet-measure-toggle,
-  .leaflet-container .leaflet-control-locate a,
-  .leaflet-container .leaflet-draw-toolbar a {
-    background: var(--surface-light) !important;
-    color: var(--text-light) !important;
-  }
 }
