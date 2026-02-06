@@ -56,6 +56,10 @@ body {
   transform: translateY(-1px);
   box-shadow: 0 12px 22px rgba(10, 12, 20, 0.25);
 }
+.leaflet-control-custom:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 22px rgba(10, 12, 20, 0.25);
+}
 .leaflet-draw-toolbar {
   display: none !important;
 }
@@ -308,68 +312,12 @@ body {
   background-image: none !important;
 }
 
-.leaflet-bar a,
-.leaflet-control-custom,
-.leaflet-control-layers-toggle {
-  width: 36px;
-  height: 36px;
-}
-
 .leaflet-bar a {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface-light);
-  color: var(--text-dark);
-  border: none;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .leaflet-bar a:hover {
   transform: translateY(-1px);
   box-shadow: 0 12px 22px rgba(10, 12, 20, 0.22);
-}
-
-.leaflet-draw-toolbar a {
-  border-radius: 8px;
-  box-shadow: var(--shadow-soft);
-}
-
-.leaflet-draw-toolbar a:hover {
-  background: rgba(255, 255, 255, 0.85);
-}
-
-.leaflet-draw-toolbar .leaflet-draw-draw-polygon,
-.leaflet-draw-toolbar .leaflet-draw-draw-polyline,
-.leaflet-draw-toolbar .leaflet-draw-draw-rectangle,
-.leaflet-draw-toolbar .leaflet-draw-draw-circle,
-.leaflet-draw-toolbar .leaflet-draw-draw-marker,
-.leaflet-draw-toolbar .leaflet-draw-edit-edit,
-.leaflet-draw-toolbar .leaflet-draw-edit-remove {
-  color: var(--text-dark);
-}
-
-.leaflet-control-measure {
-  background: transparent;
-}
-
-.leaflet-measure-toggle {
-  background-image: none !important;
-  text-indent: 0;
-  color: var(--text-dark);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  box-shadow: var(--shadow-soft);
-  border-radius: 8px;
-}
-
-.leaflet-measure-toggle::before {
-  font-family: "Font Awesome 6 Free";
-  font-weight: 900;
-  content: "\f545";
-  font-size: 1.1em;
 }
 
 @keyframes pulse-glow {
@@ -492,17 +440,6 @@ body {
     background: rgba(255, 145, 48, 0.25) !important;
   }
 
-  .leaflet-control-custom,
-  .leaflet-control-layers-toggle,
-  .leaflet-bar a {
-    background: var(--surface-light);
-    color: var(--text-light);
-  }
-
-  .leaflet-control-custom i.fas.fa-globe {
-    color: var(--text-light);
-  }
-
   #panel-content select,
   #panel-content button {
     background: rgba(22, 24, 30, 0.92);
@@ -522,21 +459,5 @@ body {
 
   .secondary-action:hover {
     background: rgba(255, 255, 255, 0.2);
-  }
-
-  .leaflet-draw-toolbar a {
-    background: rgba(19, 21, 28, 0.92);
-    color: var(--text-light);
-    border-color: rgba(255, 255, 255, 0.18);
-  }
-
-  .leaflet-draw-toolbar a:hover {
-    background: rgba(30, 34, 44, 0.9);
-  }
-
-  .leaflet-measure-toggle {
-    background: rgba(19, 21, 28, 0.92);
-    color: var(--text-light);
-    box-shadow: var(--shadow-soft);
   }
 }
