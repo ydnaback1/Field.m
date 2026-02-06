@@ -120,6 +120,16 @@ html, body {
   margin-left: auto;
   margin-right: auto;
 }
+#panel-content select:disabled {
+  background: rgba(255, 255, 255, 0.7);
+  color: #888;
+  cursor: not-allowed;
+}
+.panel-empty {
+  margin-top: 8px;
+  font-size: 0.95em;
+  color: rgba(255, 255, 255, 0.75);
+}
 .primary-action, .route-actions-row button {
   background: #ffe28d;
   color: #222;
@@ -148,6 +158,35 @@ html, body {
   gap: 22px;
   margin-top: 12px;
   width: 100%;
+}
+.secondary-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.secondary-action {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 0.95em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.secondary-action:hover {
+  background: rgba(255, 255, 255, 0.24);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+.panel-status {
+  margin-top: 8px;
+  font-size: 0.85em;
+  color: rgba(255, 255, 255, 0.75);
 }
 
 #panel-content select:focus,

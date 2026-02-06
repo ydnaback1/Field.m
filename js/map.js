@@ -144,40 +144,128 @@ let drawingMode = false;
 let editingMode = false;
 
 // --- Panel Main Function ---
+function getDefaultRouteName(mode) {
+  const routes = window.getRouteList(mode);
+  const baseName = 'Route';
+  let nextIndex = routes.length + 1;
+  while (routes.some(route => route.name === `${baseName} ${nextIndex}`)) {
+    nextIndex += 1;
+  }
+  return `${baseName} ${nextIndex}`;
+}
+
+function getRouteMetrics(geojson) {
+  if (!geojson) return { km: "", mi: "", timeStr: "" };
+  const layer = L.geoJSON(geojson);
+  let totalMeters = 0;
+  layer.eachLayer(l => {
+    if (l instanceof L.Polyline) {
+      const latlngs = l.getLatLngs();
+      for (let i = 1; i < latlngs.length; i++) {
+        totalMeters += latlngs[i - 1].distanceTo(latlngs[i]);
+      }
+    }
+  });
+  if (!totalMeters) return { km: "", mi: "", timeStr: "" };
+  const km = (totalMeters / 1000).toFixed(2);
+  const mi = (totalMeters / 1609.344).toFixed(2);
+  let timeStr = "";
+  let totalMin = Math.round((km / 5) * 60);
+  if (totalMin >= 60) {
+    const hours = Math.floor(totalMin / 60);
+    const mins = totalMin % 60;
+    timeStr = `${hours}h ${mins > 0 ? `${mins}m` : ""}`;
+  } else {
+    timeStr = `${totalMin}m`;
+  }
+  return { km, mi, timeStr };
+}
+
+function getShareableRouteName(route) {
+  return route && route.name ? route.name : 'Shared Route';
+}
+
+function encodeRoutePayload(route) {
+  const payload = {
+    name: getShareableRouteName(route),
+    geojson: route.geojson
+  };
+  const json = JSON.stringify(payload);
+  return btoa(unescape(encodeURIComponent(json)));
+}
+
+function decodeRoutePayload(encoded) {
+  const json = decodeURIComponent(escape(atob(encoded)));
+  return JSON.parse(json);
+}
+
+function getSharedRouteFromUrl() {
+  const url = new URL(window.location.href);
+  const routeParam = url.searchParams.get('route');
+  if (!routeParam) return null;
+  try {
+    return decodeRoutePayload(routeParam);
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearSharedRouteParam() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('route')) return;
+  url.searchParams.delete('route');
+  window.history.replaceState({}, document.title, url.toString());
+}
+
+function routeGeojsonToGpx(routeName, geojson) {
+  const layer = L.geoJSON(geojson);
+  let points = [];
+  layer.eachLayer(l => {
+    if (l instanceof L.Polyline) {
+      l.getLatLngs().forEach(latlng => {
+        points.push(latlng);
+      });
+    }
+  });
+  const safeName = routeName.replace(/[<>]/g, '');
+  const gpxPoints = points
+    .map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`)
+    .join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<gpx version="1.1" creator="Field Maps" xmlns="http://www.topografix.com/GPX/1/1">\n` +
+    `  <trk>\n` +
+    `    <name>${safeName}</name>\n` +
+    `    <trkseg>\n` +
+    `${gpxPoints}\n` +
+    `    </trkseg>\n` +
+    `  </trk>\n` +
+    `</gpx>`;
+}
+
+function downloadTextFile(filename, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function showRoutePanelContent() {
   const mode = window.currentMode || 'uk';
   const routes = window.getRouteList(mode);
   const idx = window.currentRouteIndex[mode];
-  const currentRoute = (typeof idx === "number" && routes[idx]) ? routes[idx] : {};
-  const name = currentRoute.name || 'No route selected';
-
-  let km = "", mi = "";
-  if (currentRoute.geojson) {
-    const layer = L.geoJSON(currentRoute.geojson);
-    let totalMeters = 0;
-    layer.eachLayer(l => {
-      if (l instanceof L.Polyline) {
-        const latlngs = l.getLatLngs();
-        for (let i = 1; i < latlngs.length; i++) {
-          totalMeters += latlngs[i-1].distanceTo(latlngs[i]);
-        }
-      }
-    });
-    km = (totalMeters / 1000).toFixed(2);
-    mi = (totalMeters / 1609.344).toFixed(2);
+  const hasRoutes = routes.length > 0;
+  const activeIndex = (typeof idx === "number" && routes[idx]) ? idx : (hasRoutes ? 0 : null);
+  const currentRoute = activeIndex !== null ? routes[activeIndex] : null;
+  if (hasRoutes && activeIndex !== idx) {
+    window.currentRouteIndex[mode] = activeIndex;
   }
-
-  let timeStr = "";
-  if (km) {
-    let totalMin = Math.round((km / 5) * 60);
-    if (totalMin >= 60) {
-      const hours = Math.floor(totalMin / 60);
-      const mins = totalMin % 60;
-      timeStr = `${hours}h ${mins > 0 ? `${mins}m` : ""}`;
-    } else {
-      timeStr = `${totalMin}m`;
-    }
-  }
+  const name = currentRoute ? currentRoute.name : 'No routes saved';
+  const { km, mi, timeStr } = getRouteMetrics(currentRoute?.geojson);
 
   // --- Action Buttons as Icons ---
   let actionButtonHtml = '';
@@ -187,13 +275,28 @@ function showRoutePanelContent() {
     actionButtonHtml = `<button id="save-edit-route-panel" class="primary-action" aria-label="Save"><i class="fa-solid fa-check"></i></button>`;
   } else {
     actionButtonHtml = `<button id="add-route-panel" class="primary-action" aria-label="Draw New Route"><i class="fa-solid fa-plus"></i></button>`;
-    if (currentRoute.geojson) {
+    if (currentRoute && currentRoute.geojson) {
       actionButtonHtml += `<button id="edit-route-panel" class="primary-action" aria-label="Edit Route"><i class="fa-solid fa-pen-to-square"></i></button>`;
       actionButtonHtml += `<button id="delete-route-panel" class="primary-action" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>`;
     }
   }
 
   // --- Panel HTML ---
+  const shareControls = currentRoute && currentRoute.geojson ? `
+    <div class="secondary-actions-row">
+      <button class="secondary-action" id="share-route-panel">
+        <i class="fa-solid fa-link"></i> Share
+      </button>
+      <button class="secondary-action" id="export-geojson-panel">
+        <i class="fa-solid fa-file-code"></i> GeoJSON
+      </button>
+      <button class="secondary-action" id="export-gpx-panel">
+        <i class="fa-solid fa-file-arrow-down"></i> GPX
+      </button>
+    </div>
+    <div class="panel-status" id="share-status" aria-live="polite"></div>
+  ` : "";
+
   panelContent.innerHTML = `
     <div class="route-title" style="font-size: 1.15em; font-weight: bold; margin-bottom: 10px;">${name}</div>
     <div class="metric-row" style="font-size:1em;">
@@ -201,22 +304,31 @@ function showRoutePanelContent() {
       ${timeStr ? `<span class="metric-pill"><i class="fa-solid fa-stopwatch"></i> ${timeStr}</span>` : ""}
     </div>
     <div>
-      <select id="route-list-panel"></select>
+      <select id="route-list-panel" ${hasRoutes ? "" : "disabled"}></select>
     </div>
+    ${hasRoutes ? "" : `<div class="panel-empty">No routes saved yet. Tap + to draw your first route.</div>`}
     <div class="route-actions-row">
       ${actionButtonHtml}
     </div>
+    ${shareControls}
   `;
 
   // --- Fill Dropdown ---
   const sel = panelContent.querySelector('#route-list-panel');
-  routes.forEach((r, i) => {
-    let opt = document.createElement('option');
-    opt.value = i;
-    opt.textContent = r.name;
+  if (hasRoutes) {
+    routes.forEach((r, i) => {
+      let opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = r.name;
+      sel.appendChild(opt);
+    });
+    if (activeIndex !== null) sel.value = activeIndex;
+  } else {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'No routes yet';
     sel.appendChild(opt);
-  });
-  if (typeof idx === "number") sel.value = idx;
+  }
 
   // --- Onchange: load route on selection ---
   sel.onchange = function() {
@@ -301,6 +413,55 @@ function showRoutePanelContent() {
       showRoutePanelContent();
     };
   }
+
+  // --- Share + Export ---
+  const shareBtn = panelContent.querySelector('#share-route-panel');
+  const exportGeoBtn = panelContent.querySelector('#export-geojson-panel');
+  const exportGpxBtn = panelContent.querySelector('#export-gpx-panel');
+  const shareStatus = panelContent.querySelector('#share-status');
+
+  if (shareBtn && currentRoute) {
+    shareBtn.onclick = async function() {
+      const url = new URL(window.location.href);
+      const encoded = encodeRoutePayload(currentRoute);
+      url.searchParams.set('route', encoded);
+      const shareUrl = url.toString();
+      let message = "Share link copied!";
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(shareUrl);
+        } else {
+          prompt("Copy this link to share:", shareUrl);
+          message = "Share link ready.";
+        }
+      } catch (e) {
+        prompt("Copy this link to share:", shareUrl);
+        message = "Share link ready.";
+      }
+      if (shareStatus) {
+        shareStatus.textContent = message;
+        setTimeout(() => {
+          if (shareStatus) shareStatus.textContent = "";
+        }, 3000);
+      }
+    };
+  }
+
+  if (exportGeoBtn && currentRoute) {
+    exportGeoBtn.onclick = function() {
+      const fileName = `${currentRoute.name || 'route'}.geojson`;
+      const content = JSON.stringify(currentRoute.geojson, null, 2);
+      downloadTextFile(fileName, content, 'application/geo+json');
+    };
+  }
+
+  if (exportGpxBtn && currentRoute) {
+    exportGpxBtn.onclick = function() {
+      const fileName = `${currentRoute.name || 'route'}.gpx`;
+      const gpx = routeGeojsonToGpx(currentRoute.name || 'Route', currentRoute.geojson);
+      downloadTextFile(fileName, gpx, 'application/gpx+xml');
+    };
+  }
 }
 
 // --- Draw Toolbar Logic ---
@@ -360,9 +521,11 @@ mapUK.on(L.Draw.Event.CREATED, function (e) {
   drawingMode = false;
   editingMode = false;
   if (e.layerType === 'polyline') {
-    let name = prompt("Name this route:");
-    window.routeLayerUK.clearLayers();
-    if (name) {
+    const defaultName = getDefaultRouteName('uk');
+    let name = prompt("Name this route:", defaultName);
+    if (name !== null) {
+      name = name.trim() || defaultName;
+      window.routeLayerUK.clearLayers();
       // Save to storage
       window.saveRouteToList('uk', name, e.layer);
 
@@ -392,9 +555,11 @@ mapWorld.on(L.Draw.Event.CREATED, function (e) {
   drawingMode = false;
   editingMode = false;
   if (e.layerType === 'polyline') {
-    let name = prompt("Name this route:");
-    window.routeLayerWorld.clearLayers();
-    if (name) {
+    const defaultName = getDefaultRouteName('world');
+    let name = prompt("Name this route:", defaultName);
+    if (name !== null) {
+      name = name.trim() || defaultName;
+      window.routeLayerWorld.clearLayers();
       window.saveRouteToList('world', name, e.layer);
       const routes = window.getRouteList('world');
       const idx = routes.length - 1;
@@ -449,6 +614,28 @@ function saveMapState() {
 }
 mapUK.on('moveend zoomend', saveMapState);
 mapWorld.on('moveend zoomend', saveMapState);
+
+// --- Load shared route if present in URL ---
+const sharedRoute = getSharedRouteFromUrl();
+if (sharedRoute && sharedRoute.geojson) {
+  const sharedMode = currentMode || 'uk';
+  const layer = L.geoJSON(sharedRoute.geojson);
+  const targetLayer = sharedMode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
+  targetLayer.clearLayers();
+  layer.eachLayer(l => targetLayer.addLayer(l));
+  window.saveRouteToList(sharedMode, sharedRoute.name || getDefaultRouteName(sharedMode), layer);
+  const routes = window.getRouteList(sharedMode);
+  window.currentRouteIndex[sharedMode] = routes.length - 1;
+  if (layer.getBounds().isValid()) {
+    const panelHeight = 300;
+    const map = sharedMode === 'uk' ? mapUK : mapWorld;
+    map.fitBounds(layer.getBounds(), {
+      paddingBottomRight: [0, panelHeight + 16],
+      paddingTopLeft: [0, 24]
+    });
+  }
+  clearSharedRouteParam();
+}
 
 // --- Remove draw toolbar if open before switching maps ---
 window.switchMap = function(mode) {
