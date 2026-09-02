@@ -136,6 +136,7 @@ if (L.Draw.Polyline) {
 const fab = document.getElementById('fab-route');
 const panel = document.getElementById('bottom-panel');
 const fabIcon = fab.querySelector('i');
+const panelClose = document.getElementById('panel-close');
 const drawToolbarContainer = document.getElementById('draw-toolbar-container');
 const panelContent = document.getElementById('panel-content');
 let activeDrawControl = null;
@@ -264,20 +265,37 @@ function showRoutePanelContent() {
   if (hasRoutes && activeIndex !== idx) {
     window.currentRouteIndex[mode] = activeIndex;
   }
-  const name = currentRoute ? currentRoute.name : 'No routes saved';
+  const name = currentRoute ? currentRoute.name : 'Plan your first walk';
   const { km, mi, timeStr } = getRouteMetrics(currentRoute?.geojson);
+  const panelEyebrow = drawingMode ? 'Drawing route' : editingMode ? 'Editing route' : 'Routes';
+  const panelTitle = drawingMode ? 'Draw your route' : name;
+  const panelHint = drawingMode
+    ? 'Tap the map to add points, then finish the route here.'
+    : editingMode
+      ? 'Move the route points on the map, then save your changes.'
+      : '';
 
   // --- Action Buttons as Icons ---
   let actionButtonHtml = '';
   if (drawingMode) {
-    actionButtonHtml = `<button id="save-route-panel" class="primary-action" aria-label="Save"><i class="fa-solid fa-check"></i></button>`;
+    actionButtonHtml = `<button id="save-route-panel" class="primary-action primary-action-wide" aria-label="Finish route">
+      <i class="fa-solid fa-check" aria-hidden="true"></i><span>Finish route</span>
+    </button>`;
   } else if (editingMode) {
-    actionButtonHtml = `<button id="save-edit-route-panel" class="primary-action" aria-label="Save"><i class="fa-solid fa-check"></i></button>`;
+    actionButtonHtml = `<button id="save-edit-route-panel" class="primary-action primary-action-wide" aria-label="Save changes">
+      <i class="fa-solid fa-check" aria-hidden="true"></i><span>Save changes</span>
+    </button>`;
   } else {
-    actionButtonHtml = `<button id="add-route-panel" class="primary-action" aria-label="Draw New Route"><i class="fa-solid fa-plus"></i></button>`;
+    actionButtonHtml = `<button id="add-route-panel" class="primary-action" aria-label="Draw new route" title="Draw new route">
+      <i class="fa-solid fa-plus" aria-hidden="true"></i><span>${currentRoute ? 'New route' : 'Draw a route'}</span>
+    </button>`;
     if (currentRoute && currentRoute.geojson) {
-      actionButtonHtml += `<button id="edit-route-panel" class="primary-action" aria-label="Edit Route"><i class="fa-solid fa-pen-to-square"></i></button>`;
-      actionButtonHtml += `<button id="delete-route-panel" class="primary-action" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>`;
+      actionButtonHtml += `<button id="edit-route-panel" class="panel-action" aria-label="Edit route" title="Edit route">
+        <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit</span>
+      </button>`;
+      actionButtonHtml += `<button id="delete-route-panel" class="panel-action danger-action" aria-label="Delete route" title="Delete route">
+        <i class="fa-solid fa-trash" aria-hidden="true"></i><span>Delete</span>
+      </button>`;
     }
   }
 
@@ -285,28 +303,33 @@ function showRoutePanelContent() {
   const shareControls = currentRoute && currentRoute.geojson ? `
     <div class="secondary-actions-row">
       <button class="secondary-action" id="share-route-panel">
-        <i class="fa-solid fa-link"></i> Share
+        <i class="fa-solid fa-link" aria-hidden="true"></i> Share
       </button>
       <button class="secondary-action" id="export-geojson-panel">
-        <i class="fa-solid fa-file-code"></i> GeoJSON
+        <i class="fa-solid fa-file-code" aria-hidden="true"></i> GeoJSON
       </button>
       <button class="secondary-action" id="export-gpx-panel">
-        <i class="fa-solid fa-file-arrow-down"></i> GPX
+        <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> GPX
       </button>
     </div>
     <div class="panel-status" id="share-status" aria-live="polite"></div>
   ` : "";
 
   panelContent.innerHTML = `
-    <div class="route-title" style="font-size: 1.15em; font-weight: bold; margin-bottom: 10px;">${name}</div>
-    <div class="metric-row" style="font-size:1em;">
-      ${km ? `<span class="metric-pill"><i class="fa-solid fa-person-walking"></i> ${km} km / ${mi} mi</span>` : ""}
-      ${timeStr ? `<span class="metric-pill"><i class="fa-solid fa-stopwatch"></i> ${timeStr}</span>` : ""}
+    <div class="panel-heading">
+      <div class="panel-eyebrow">${panelEyebrow}</div>
+      <div class="route-title">${panelTitle}</div>
+      ${panelHint ? `<p class="panel-hint">${panelHint}</p>` : ''}
     </div>
-    <div>
+    <div class="metric-row">
+      ${km && !drawingMode ? `<span class="metric-pill"><i class="fa-solid fa-person-walking" aria-hidden="true"></i><span><strong>${km}</strong> km <span class="metric-secondary">${mi} mi</span></span></span>` : ""}
+      ${timeStr && !drawingMode ? `<span class="metric-pill"><i class="fa-solid fa-stopwatch" aria-hidden="true"></i><strong>${timeStr}</strong></span>` : ""}
+    </div>
+    ${hasRoutes ? `<div class="route-picker">
+      <label for="route-list-panel">Saved route</label>
       <select id="route-list-panel" ${hasRoutes ? "" : "disabled"}></select>
-    </div>
-    ${hasRoutes ? "" : `<div class="panel-empty">No routes saved yet. Tap + to draw your first route.</div>`}
+    </div>` : ''}
+    ${hasRoutes || drawingMode ? "" : `<div class="panel-empty"><i class="fa-solid fa-map-location-dot" aria-hidden="true"></i><span>Draw directly on the map and keep your walks here.</span></div>`}
     <div class="route-actions-row">
       ${actionButtonHtml}
     </div>
@@ -315,7 +338,7 @@ function showRoutePanelContent() {
 
   // --- Fill Dropdown ---
   const sel = panelContent.querySelector('#route-list-panel');
-  if (hasRoutes) {
+  if (sel && hasRoutes) {
     routes.forEach((r, i) => {
       let opt = document.createElement('option');
       opt.value = i;
@@ -323,22 +346,16 @@ function showRoutePanelContent() {
       sel.appendChild(opt);
     });
     if (activeIndex !== null) sel.value = activeIndex;
-  } else {
-    const opt = document.createElement('option');
-    opt.value = '';
-    opt.textContent = 'No routes yet';
-    sel.appendChild(opt);
+    // --- Onchange: load route on selection ---
+    sel.onchange = function() {
+      const idx = sel.value;
+      if (idx === '' || idx === null) return;
+      window.loadRouteByIndex(mode, idx);
+      drawingMode = false;
+      editingMode = false;
+      showRoutePanelContent();
+    };
   }
-
-  // --- Onchange: load route on selection ---
-  sel.onchange = function() {
-    const idx = sel.value;
-    if (idx === '' || idx === null) return;
-    window.loadRouteByIndex(mode, idx);
-    drawingMode = false;
-    editingMode = false;
-    showRoutePanelContent();
-  };
 
   // --- Draw New Route ---
   const addBtn = panelContent.querySelector('#add-route-panel');
@@ -501,20 +518,39 @@ function removeDrawToolbar() {
 }
 
 // --- FAB/panel toggle ---
-fab.onclick = function() {
-  const isOpen = panel.classList.toggle('open');
+function setRoutePanelOpen(isOpen, restoreFocus = false) {
+  panel.classList.toggle('open', isOpen);
   fab.classList.toggle('panel-open', isOpen);
-  fabIcon.className = isOpen ? 'fas fa-xmark' : 'fas fa-route';
+  fabIcon.className = 'fas fa-route';
+  fab.setAttribute('aria-expanded', String(isOpen));
+  panel.setAttribute('aria-hidden', String(!isOpen));
+  panel.inert = !isOpen;
   if (isOpen) {
     showRoutePanelContent();
     addDrawToolbar();
+    window.requestAnimationFrame(() => panelClose.focus({ preventScroll: true }));
   } else {
     panelContent.innerHTML = '';
     removeDrawToolbar();
     drawingMode = false;
     editingMode = false;
+    if (restoreFocus) fab.focus({ preventScroll: true });
   }
+}
+
+fab.onclick = function() {
+  setRoutePanelOpen(!panel.classList.contains('open'));
 };
+
+panelClose.onclick = function() {
+  setRoutePanelOpen(false, true);
+};
+
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape' && panel.classList.contains('open')) {
+    setRoutePanelOpen(false, true);
+  }
+});
 
 // --- Draw event handlers ---
 mapUK.on(L.Draw.Event.CREATED, function (e) {
@@ -645,6 +681,9 @@ window.switchMap = function(mode) {
     panel.classList.remove('open');
     fab.classList.remove('panel-open');
     fabIcon.className = 'fas fa-route';
+    fab.setAttribute('aria-expanded', 'false');
+    panel.setAttribute('aria-hidden', 'true');
+    panel.inert = true;
     panelContent.innerHTML = '';
     drawingMode = false;
     editingMode = false;

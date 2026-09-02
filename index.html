@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Field Maps</title>
   <link rel="icon" type="image/svg+xml" href="explore_24dp_FILL0_wght400_GRAD0_opsz24.svg" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.78.0/dist/L.Control.Locate.min.css" />
   <link rel="stylesheet" href="plugins/leaflet-measure/leaflet.measure.css" />
@@ -31,13 +28,18 @@
   <script src="js/controls.js"></script>
   <script src="js/routes.js"></script>
 
-  <div id="bottom-panel">
-    <div id="panel-drag"></div>
+  <div id="bottom-panel" role="region" aria-label="Routes" aria-hidden="true" inert>
+    <div id="panel-topbar">
+      <div id="panel-drag" aria-hidden="true"></div>
+      <button id="panel-close" type="button" title="Close routes" aria-label="Close routes">
+        <i class="fas fa-chevron-down" aria-hidden="true"></i>
+      </button>
+    </div>
     <div id="panel-content"></div>
     <div id="draw-toolbar-container"></div>
   </div>
-  <button id="fab-route" title="Routes">
-    <i class="fas fa-route"></i>
+  <button id="fab-route" type="button" title="Open routes" aria-label="Open routes" aria-controls="bottom-panel" aria-expanded="false">
+    <i class="fas fa-route" aria-hidden="true"></i>
   </button>
 
 
