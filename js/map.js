@@ -143,16 +143,60 @@ let activeDrawControl = null;
 
 let drawingMode = false;
 let editingMode = false;
+let panelView = 'library';
+let routeLibraryQuery = '';
+let routeLibrarySort = 'recent';
+let routeLibraryFilter = 'all';
+let renamingRoute = false;
+let confirmingDelete = false;
+let routePanelNotice = '';
 
 // --- Panel Main Function ---
 function getDefaultRouteName(mode) {
   const routes = window.getRouteList(mode);
   const baseName = 'Route';
   let nextIndex = routes.length + 1;
-  while (routes.some(route => route.name === `${baseName} ${nextIndex}`)) {
+  while (routes.some(route => route && route.name === `${baseName} ${nextIndex}`)) {
     nextIndex += 1;
   }
   return `${baseName} ${nextIndex}`;
+}
+
+function escapeHtml(value) {
+  const element = document.createElement('div');
+  element.textContent = String(value ?? '');
+  return element.innerHTML;
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function getModeLabel(mode) {
+  return mode === 'uk' ? 'UK' : 'Worldwide';
+}
+
+function getActiveRouteContext() {
+  const mode = window.currentMode || 'uk';
+  const index = window.currentRouteIndex[mode];
+  const routes = window.getRouteList(mode);
+  if (typeof index !== 'number' || !routes[index] || !routes[index].geojson) return null;
+  return { mode, index, route: routes[index] };
+}
+
+function getRouteTimestamp(route, index) {
+  const timestamp = Date.parse(route.updatedAt || route.createdAt || '');
+  return Number.isFinite(timestamp) ? timestamp : index;
+}
+
+function formatRouteDate(route) {
+  const timestamp = Date.parse(route.updatedAt || route.createdAt || '');
+  if (!Number.isFinite(timestamp)) return '';
+  return new Intl.DateTimeFormat(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: new Date(timestamp).getFullYear() === new Date().getFullYear() ? undefined : 'numeric'
+  }).format(new Date(timestamp));
 }
 
 function getRouteMetrics(geojson) {
@@ -255,229 +299,438 @@ function downloadTextFile(filename, content, mimeType) {
   URL.revokeObjectURL(url);
 }
 
-function showRoutePanelContent() {
-  const mode = window.currentMode || 'uk';
-  const routes = window.getRouteList(mode);
-  const idx = window.currentRouteIndex[mode];
-  const hasRoutes = routes.length > 0;
-  const activeIndex = (typeof idx === "number" && routes[idx]) ? idx : (hasRoutes ? 0 : null);
-  const currentRoute = activeIndex !== null ? routes[activeIndex] : null;
-  if (hasRoutes && activeIndex !== idx) {
-    window.currentRouteIndex[mode] = activeIndex;
-  }
-  const name = currentRoute ? currentRoute.name : 'Plan your first walk';
-  const { km, mi, timeStr } = getRouteMetrics(currentRoute?.geojson);
-  const panelEyebrow = drawingMode ? 'Drawing route' : editingMode ? 'Editing route' : 'Routes';
-  const panelTitle = drawingMode ? 'Draw your route' : name;
-  const panelHint = drawingMode
-    ? 'Tap the map to add points, then finish the route here.'
-    : editingMode
-      ? 'Move the route points on the map, then save your changes.'
-      : '';
+function getRouteLibraryItems() {
+  return ['uk', 'world'].flatMap(mode => window.getRouteList(mode)
+    .map((route, index) => ({ route, index }))
+    .filter(item => item.route && item.route.geojson)
+    .map(item => ({
+      mode,
+      index: item.index,
+      route: item.route
+    })));
+}
 
-  // --- Action Buttons as Icons ---
-  let actionButtonHtml = '';
-  if (drawingMode) {
-    actionButtonHtml = `<button id="save-route-panel" class="primary-action primary-action-wide" aria-label="Finish route">
-      <i class="fa-solid fa-check" aria-hidden="true"></i><span>Finish route</span>
-    </button>`;
-  } else if (editingMode) {
-    actionButtonHtml = `<button id="save-edit-route-panel" class="primary-action primary-action-wide" aria-label="Save changes">
-      <i class="fa-solid fa-check" aria-hidden="true"></i><span>Save changes</span>
-    </button>`;
-  } else {
-    actionButtonHtml = `<button id="add-route-panel" class="primary-action" aria-label="Draw new route" title="Draw new route">
-      <i class="fa-solid fa-plus" aria-hidden="true"></i><span>${currentRoute ? 'New route' : 'Draw a route'}</span>
-    </button>`;
-    if (currentRoute && currentRoute.geojson) {
-      actionButtonHtml += `<button id="edit-route-panel" class="panel-action" aria-label="Edit route" title="Edit route">
-        <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit</span>
-      </button>`;
-      actionButtonHtml += `<button id="delete-route-panel" class="panel-action danger-action" aria-label="Delete route" title="Delete route">
-        <i class="fa-solid fa-trash" aria-hidden="true"></i><span>Delete</span>
-      </button>`;
-    }
-  }
-
-  // --- Panel HTML ---
-  const shareControls = currentRoute && currentRoute.geojson ? `
-    <div class="secondary-actions-row">
-      <button class="secondary-action" id="share-route-panel">
-        <i class="fa-solid fa-link" aria-hidden="true"></i> Share
-      </button>
-      <button class="secondary-action" id="export-geojson-panel">
-        <i class="fa-solid fa-file-code" aria-hidden="true"></i> GeoJSON
-      </button>
-      <button class="secondary-action" id="export-gpx-panel">
-        <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> GPX
-      </button>
-    </div>
-    <div class="panel-status" id="share-status" aria-live="polite"></div>
-  ` : "";
-
-  panelContent.innerHTML = `
-    <div class="panel-heading">
-      <div class="panel-eyebrow">${panelEyebrow}</div>
-      <div class="route-title">${panelTitle}</div>
-      ${panelHint ? `<p class="panel-hint">${panelHint}</p>` : ''}
-    </div>
-    <div class="metric-row">
-      ${km && !drawingMode ? `<span class="metric-pill"><i class="fa-solid fa-person-walking" aria-hidden="true"></i><span><strong>${km}</strong> km <span class="metric-secondary">${mi} mi</span></span></span>` : ""}
-      ${timeStr && !drawingMode ? `<span class="metric-pill"><i class="fa-solid fa-stopwatch" aria-hidden="true"></i><strong>${timeStr}</strong></span>` : ""}
-    </div>
-    ${hasRoutes ? `<div class="route-picker">
-      <label for="route-list-panel">Saved route</label>
-      <select id="route-list-panel" ${hasRoutes ? "" : "disabled"}></select>
-    </div>` : ''}
-    ${hasRoutes || drawingMode ? "" : `<div class="panel-empty"><i class="fa-solid fa-map-location-dot" aria-hidden="true"></i><span>Draw directly on the map and keep your walks here.</span></div>`}
-    <div class="route-actions-row">
-      ${actionButtonHtml}
-    </div>
-    ${shareControls}
-  `;
-
-  // --- Fill Dropdown ---
-  const sel = panelContent.querySelector('#route-list-panel');
-  if (sel && hasRoutes) {
-    routes.forEach((r, i) => {
-      let opt = document.createElement('option');
-      opt.value = i;
-      opt.textContent = r.name;
-      sel.appendChild(opt);
+function getVisibleRouteLibraryItems() {
+  const query = routeLibraryQuery.trim().toLocaleLowerCase();
+  return getRouteLibraryItems()
+    .filter(item => routeLibraryFilter === 'all' || item.mode === routeLibraryFilter)
+    .filter(item => !query || String(item.route.name || '').toLocaleLowerCase().includes(query))
+    .sort((a, b) => {
+      if (routeLibrarySort === 'name') {
+        return String(a.route.name || '').localeCompare(String(b.route.name || ''), undefined, { sensitivity: 'base' });
+      }
+      return getRouteTimestamp(b.route, b.index) - getRouteTimestamp(a.route, a.index);
     });
-    if (activeIndex !== null) sel.value = activeIndex;
-    // --- Onchange: load route on selection ---
-    sel.onchange = function() {
-      const idx = sel.value;
-      if (idx === '' || idx === null) return;
-      window.loadRouteByIndex(mode, idx);
-      drawingMode = false;
-      editingMode = false;
-      showRoutePanelContent();
-    };
+}
+
+function formatLibraryDistance(km) {
+  const value = Number(km);
+  if (!Number.isFinite(value)) return '';
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: value < 10 ? 1 : 0 })} km`;
+}
+
+function openRouteFromLibrary(mode, index) {
+  if ((window.currentMode || 'uk') !== mode) window.switchMap(mode);
+  if (!window.loadRouteByIndex(mode, index)) return;
+  panelView = 'details';
+  drawingMode = false;
+  editingMode = false;
+  renamingRoute = false;
+  confirmingDelete = false;
+  routePanelNotice = '';
+  setRoutePanelOpen(true);
+  updateRouteFabLabel();
+}
+
+function renderRouteLibraryResults() {
+  const results = panelContent.querySelector('#route-library-results');
+  const summary = panelContent.querySelector('#route-library-summary');
+  if (!results || !summary) return;
+
+  const items = getVisibleRouteLibraryItems();
+  const total = getRouteLibraryItems().length;
+  summary.textContent = `${items.length} ${items.length === 1 ? 'route' : 'routes'} shown`;
+  results.replaceChildren();
+
+  if (!items.length) {
+    const empty = document.createElement('div');
+    empty.className = 'panel-empty route-library-empty';
+    if (!total) {
+      empty.innerHTML = `<i class="fa-solid fa-map-location-dot" aria-hidden="true"></i>
+        <div><strong>No saved routes yet</strong><span>Draw your first walk and it will be stored on this device.</span></div>`;
+    } else {
+      empty.innerHTML = `<i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        <div><strong>No routes found</strong><span>Try another name or map filter.</span></div>
+        <button type="button" class="text-action" id="clear-route-filters">Clear filters</button>`;
+    }
+    results.appendChild(empty);
+    const clearButton = empty.querySelector('#clear-route-filters');
+    if (clearButton) {
+      clearButton.onclick = function() {
+        routeLibraryQuery = '';
+        routeLibraryFilter = 'all';
+        showRoutePanelContent();
+      };
+    }
+    return;
   }
 
-  // --- Draw New Route ---
-  const addBtn = panelContent.querySelector('#add-route-panel');
-  if (addBtn) {
-    addBtn.onclick = function() {
-      drawingMode = true;
-      editingMode = false;
-      showRoutePanelContent();
-      const map = (mode === 'uk') ? mapUK : mapWorld;
-      const drawControl = activeDrawControl;
-      if (drawControl && drawControl._toolbars && drawControl._toolbars.draw) {
-        drawControl._toolbars.draw._modes.polyline.handler.enable();
-      }
+  const list = document.createElement('ul');
+  list.className = 'route-library-list';
+
+  items.forEach(item => {
+    const routeName = item.route.name || 'Untitled route';
+    const metrics = getRouteMetrics(item.route.geojson);
+    const distance = formatLibraryDistance(metrics.km);
+    const date = formatRouteDate(item.route);
+    const isActive = item.mode === (window.currentMode || 'uk') && window.currentRouteIndex[item.mode] === item.index;
+    const meta = [distance, metrics.timeStr, date ? `Updated ${date}` : 'Saved route'].filter(Boolean);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `route-library-row${isActive ? ' active-route' : ''}`;
+    button.setAttribute('aria-label', `Open ${routeName}, ${getModeLabel(item.mode)}${distance ? `, ${distance}` : ''}`);
+    if (isActive) button.setAttribute('aria-current', 'true');
+    button.innerHTML = `
+      <span class="route-row-icon" aria-hidden="true"><i class="fa-solid fa-route"></i></span>
+      <span class="route-row-copy">
+        <span class="route-row-title">${escapeHtml(routeName)}</span>
+        <span class="route-row-meta">${meta.map(value => `<span>${escapeHtml(value)}</span>`).join('<span aria-hidden="true">·</span>')}</span>
+      </span>
+      <span class="route-row-side">
+        <span class="route-mode-badge">${getModeLabel(item.mode)}</span>
+        ${isActive ? '<span class="active-route-label">On map</span>' : '<i class="fa-solid fa-chevron-right" aria-hidden="true"></i>'}
+      </span>`;
+    button.onclick = function() { openRouteFromLibrary(item.mode, item.index); };
+    const listItem = document.createElement('li');
+    listItem.appendChild(button);
+    list.appendChild(listItem);
+  });
+
+  results.appendChild(list);
+}
+
+function startRouteDrawing() {
+  const mode = window.currentMode || 'uk';
+  drawingMode = true;
+  editingMode = false;
+  panelView = 'details';
+  renamingRoute = false;
+  confirmingDelete = false;
+  routePanelNotice = '';
+  showRoutePanelContent();
+  const drawControl = activeDrawControl;
+  if (drawControl && drawControl._toolbars && drawControl._toolbars.draw) {
+    drawControl._toolbars.draw._modes.polyline.handler.enable();
+  }
+}
+
+function showRouteLibrary() {
+  const items = getRouteLibraryItems();
+  const counts = {
+    all: items.length,
+    uk: items.filter(item => item.mode === 'uk').length,
+    world: items.filter(item => item.mode === 'world').length
+  };
+  panel.classList.add('library-view');
+  panel.classList.toggle('library-scroll-view', counts.all > 4);
+  panel.setAttribute('aria-label', 'Saved routes');
+  panelContent.className = 'library-content';
+  panelContent.innerHTML = `
+    <div class="panel-heading library-heading">
+      <div class="panel-eyebrow">Your walks</div>
+      <div class="panel-title-row">
+        <h2 class="route-title">Saved routes</h2>
+        <span class="library-count">${counts.all}</span>
+      </div>
+      <p class="panel-hint">Stored locally on this device. Choose a route to put it on the map.</p>
+    </div>
+    ${counts.all ? `<div class="route-library-tools">
+      <label class="route-search-field">
+        <span class="sr-only">Search saved routes</span>
+        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        <input id="route-search" type="search" placeholder="Search routes" autocomplete="off" value="${escapeAttribute(routeLibraryQuery)}">
+      </label>
+      <label class="route-sort-field">
+        <span class="sr-only">Sort saved routes</span>
+        <select id="route-sort" aria-label="Sort saved routes">
+          <option value="recent"${routeLibrarySort === 'recent' ? ' selected' : ''}>Recent</option>
+          <option value="name"${routeLibrarySort === 'name' ? ' selected' : ''}>Name</option>
+        </select>
+      </label>
+    </div>
+    <div class="route-library-filters" role="group" aria-label="Filter routes by map">
+      <button type="button" aria-pressed="${routeLibraryFilter === 'all'}" data-filter="all">All <span>${counts.all}</span></button>
+      <button type="button" aria-pressed="${routeLibraryFilter === 'uk'}" data-filter="uk">UK <span>${counts.uk}</span></button>
+      <button type="button" aria-pressed="${routeLibraryFilter === 'world'}" data-filter="world">Worldwide <span>${counts.world}</span></button>
+    </div>` : ''}
+    <div id="route-library-summary" class="sr-only" aria-live="polite"></div>
+    <div id="route-library-results"></div>
+    <div class="library-footer">
+      <button id="add-route-panel" class="primary-action primary-action-wide" type="button">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i><span>New ${getModeLabel(window.currentMode || 'uk')} route</span>
+      </button>
+    </div>`;
+
+  const search = panelContent.querySelector('#route-search');
+  if (search) {
+    search.oninput = function() {
+      routeLibraryQuery = search.value;
+      renderRouteLibraryResults();
     };
   }
-
-  // --- Edit ---
-  const editBtn = panelContent.querySelector('#edit-route-panel');
-  if (editBtn) {
-    editBtn.onclick = function() {
-      editingMode = true;
-      drawingMode = false;
-      showRoutePanelContent();
-      const drawControl = activeDrawControl;
-      if (drawControl && drawControl._toolbars && drawControl._toolbars.edit) {
-        drawControl._toolbars.edit._modes.edit.handler.enable();
-      }
+  const sort = panelContent.querySelector('#route-sort');
+  if (sort) {
+    sort.onchange = function() {
+      routeLibrarySort = sort.value;
+      renderRouteLibraryResults();
     };
   }
-
-  // --- Delete ---
-  const delBtn = panelContent.querySelector('#delete-route-panel');
-  if (delBtn) {
-    delBtn.onclick = function() {
-      const idx = sel.value;
-      if (idx === '' || idx === null) return;
-      window.deleteRouteFromList(mode, idx);
-      window.updateRouteListUI(mode);
-      if (mode === 'uk') window.routeLayerUK.clearLayers();
-      else window.routeLayerWorld.clearLayers();
-      drawingMode = false;
-      editingMode = false;
+  panelContent.querySelectorAll('[data-filter]').forEach(button => {
+    button.onclick = function() {
+      routeLibraryFilter = button.dataset.filter;
       showRoutePanelContent();
     };
-  }
+  });
+  panelContent.querySelector('#add-route-panel').onclick = startRouteDrawing;
+  renderRouteLibraryResults();
+}
 
-  // --- Save (drawing mode) ---
-  const saveBtn = panelContent.querySelector('#save-route-panel');
-  if (saveBtn) {
-    saveBtn.onclick = function() {
-      const map = (mode === 'uk') ? mapUK : mapWorld;
-      const drawControl = activeDrawControl;
-      if (drawControl && drawControl._toolbars && drawControl._toolbars.draw) {
-        drawControl._toolbars.draw._modes.polyline.handler.completeShape();
-        drawControl._toolbars.draw._modes.polyline.handler.disable();
-      }
-      drawingMode = false;
-      showRoutePanelContent();
-    };
-  }
+function showRouteWorkflow() {
+  const mode = window.currentMode || 'uk';
+  const context = getActiveRouteContext();
+  panel.classList.remove('library-view');
+  panel.classList.remove('library-scroll-view');
+  panel.setAttribute('aria-label', drawingMode ? 'Draw route' : 'Edit route');
+  panelContent.className = 'route-detail-content';
+  panelContent.innerHTML = `
+    <div class="panel-heading workflow-heading">
+      <div class="panel-eyebrow">${drawingMode ? `New ${getModeLabel(mode)} route` : 'Editing route'}</div>
+      <h2 class="route-title">${drawingMode ? 'Draw your route' : `Edit ${escapeHtml(context?.route.name || 'route')}`}</h2>
+      <p class="panel-hint">${drawingMode ? 'Tap the map to add points. Use the map while this sheet stays open.' : 'Move route points on the map, then save or discard your changes.'}</p>
+    </div>
+    <div class="workflow-tip"><span>1</span>${drawingMode ? 'Add at least two points on the map' : 'Drag any point to adjust the route'}</div>
+    <div class="route-actions-row">
+      <button id="${drawingMode ? 'save-route-panel' : 'save-edit-route-panel'}" class="primary-action primary-action-wide" type="button">
+        <i class="fa-solid fa-check" aria-hidden="true"></i><span>${drawingMode ? 'Finish route' : 'Save changes'}</span>
+      </button>
+      <button id="cancel-route-workflow" class="panel-action" type="button">Cancel</button>
+    </div>`;
 
-  // --- Save Edit ---
-  const saveEditBtn = panelContent.querySelector('#save-edit-route-panel');
-  if (saveEditBtn) {
-    saveEditBtn.onclick = function() {
-      const drawControl = activeDrawControl;
-      if (drawControl && drawControl._toolbars && drawControl._toolbars.edit) {
-        drawControl._toolbars.edit._modes.edit.handler.save();
-        drawControl._toolbars.edit._modes.edit.handler.disable();
-      }
-      editingMode = false;
-      showRoutePanelContent();
-    };
-  }
+  const finishButton = panelContent.querySelector(drawingMode ? '#save-route-panel' : '#save-edit-route-panel');
+  finishButton.onclick = function() {
+    if (!activeDrawControl) return;
+    if (drawingMode && activeDrawControl._toolbars?.draw) {
+      activeDrawControl._toolbars.draw._modes.polyline.handler.completeShape();
+    } else if (editingMode && activeDrawControl._toolbars?.edit) {
+      const handler = activeDrawControl._toolbars.edit._modes.edit.handler;
+      handler.save();
+      handler.disable();
+    }
+  };
 
-  // --- Share + Export ---
+  panelContent.querySelector('#cancel-route-workflow').onclick = function() {
+    if (activeDrawControl && drawingMode && activeDrawControl._toolbars?.draw) {
+      activeDrawControl._toolbars.draw._modes.polyline.handler.disable();
+    }
+    if (activeDrawControl && editingMode && activeDrawControl._toolbars?.edit) {
+      const handler = activeDrawControl._toolbars.edit._modes.edit.handler;
+      if (typeof handler.revertLayers === 'function') handler.revertLayers();
+      handler.disable();
+    }
+    drawingMode = false;
+    editingMode = false;
+    panelView = context ? 'details' : 'library';
+    showRoutePanelContent();
+  };
+}
+
+function bindRouteShareAndExport(currentRoute) {
   const shareBtn = panelContent.querySelector('#share-route-panel');
   const exportGeoBtn = panelContent.querySelector('#export-geojson-panel');
   const exportGpxBtn = panelContent.querySelector('#export-gpx-panel');
   const shareStatus = panelContent.querySelector('#share-status');
 
-  if (shareBtn && currentRoute) {
+  if (shareBtn) {
     shareBtn.onclick = async function() {
       const url = new URL(window.location.href);
-      const encoded = encodeRoutePayload(currentRoute);
-      url.searchParams.set('route', encoded);
+      url.searchParams.set('route', encodeRoutePayload(currentRoute));
       const shareUrl = url.toString();
-      let message = "Share link copied!";
+      let message = 'Share link copied.';
       try {
         if (navigator.clipboard && navigator.clipboard.writeText) {
           await navigator.clipboard.writeText(shareUrl);
         } else {
-          prompt("Copy this link to share:", shareUrl);
-          message = "Share link ready.";
+          prompt('Copy this link to share:', shareUrl);
+          message = 'Share link ready.';
         }
       } catch (e) {
-        prompt("Copy this link to share:", shareUrl);
-        message = "Share link ready.";
+        prompt('Copy this link to share:', shareUrl);
+        message = 'Share link ready.';
       }
       if (shareStatus) {
         shareStatus.textContent = message;
-        setTimeout(() => {
-          if (shareStatus) shareStatus.textContent = "";
-        }, 3000);
+        setTimeout(() => { shareStatus.textContent = ''; }, 3000);
       }
     };
   }
 
-  if (exportGeoBtn && currentRoute) {
+  if (exportGeoBtn) {
     exportGeoBtn.onclick = function() {
-      const fileName = `${currentRoute.name || 'route'}.geojson`;
-      const content = JSON.stringify(currentRoute.geojson, null, 2);
-      downloadTextFile(fileName, content, 'application/geo+json');
+      downloadTextFile(`${currentRoute.name || 'route'}.geojson`, JSON.stringify(currentRoute.geojson, null, 2), 'application/geo+json');
     };
   }
-
-  if (exportGpxBtn && currentRoute) {
+  if (exportGpxBtn) {
     exportGpxBtn.onclick = function() {
-      const fileName = `${currentRoute.name || 'route'}.gpx`;
-      const gpx = routeGeojsonToGpx(currentRoute.name || 'Route', currentRoute.geojson);
-      downloadTextFile(fileName, gpx, 'application/gpx+xml');
+      downloadTextFile(`${currentRoute.name || 'route'}.gpx`, routeGeojsonToGpx(currentRoute.name || 'Route', currentRoute.geojson), 'application/gpx+xml');
     };
+  }
+}
+
+function showActiveRouteDetails(context) {
+  const currentRoute = context.route;
+  const { km, mi, timeStr } = getRouteMetrics(currentRoute.geojson);
+  const date = formatRouteDate(currentRoute);
+  panel.classList.remove('library-view');
+  panel.classList.remove('library-scroll-view');
+  panel.setAttribute('aria-label', 'Active route details');
+  panelContent.className = 'route-detail-content';
+  panelContent.innerHTML = `
+    <div class="panel-navigation">
+      <button id="back-to-library" class="panel-back" type="button"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Saved routes</button>
+      <span class="route-mode-badge">${getModeLabel(context.mode)} map</span>
+    </div>
+    ${renamingRoute ? `<form id="rename-route-form" class="rename-route-form">
+      <label for="route-name-input">Route name</label>
+      <input id="route-name-input" name="routeName" maxlength="100" required value="${escapeAttribute(currentRoute.name || '')}">
+      <div class="route-actions-row">
+        <button class="primary-action" type="submit">Save name</button>
+        <button class="panel-action" id="cancel-rename-route" type="button">Cancel</button>
+      </div>
+    </form>` : `<div class="panel-heading active-route-heading">
+      <div class="panel-eyebrow"><i class="fa-solid fa-circle" aria-hidden="true"></i> On map</div>
+      <h2 class="route-title">${escapeHtml(currentRoute.name || 'Untitled route')}</h2>
+      ${date ? `<p class="panel-hint">Updated ${escapeHtml(date)}</p>` : ''}
+    </div>`}
+    ${!renamingRoute ? `<div class="metric-row">
+      ${km ? `<span class="metric-pill"><i class="fa-solid fa-person-walking" aria-hidden="true"></i><span><strong>${km}</strong> km <span class="metric-secondary">${mi} mi</span></span></span>` : ''}
+      ${timeStr ? `<span class="metric-pill"><i class="fa-solid fa-stopwatch" aria-hidden="true"></i><strong>${timeStr}</strong></span>` : ''}
+    </div>
+    ${routePanelNotice ? `<div class="panel-notice" role="status">${escapeHtml(routePanelNotice)}</div>` : ''}
+    <div class="route-actions-row active-route-actions">
+      <button id="edit-route-panel" class="primary-action" type="button"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit route</span></button>
+      <button id="add-route-panel" class="panel-action" type="button"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>New route</span></button>
+    </div>
+    ${confirmingDelete ? `<div class="route-delete-confirm" role="alert">
+      <div><strong>Delete this route?</strong><span>This removes it from this device.</span></div>
+      <div class="route-actions-row">
+        <button id="confirm-delete-route" class="danger-solid" type="button">Delete</button>
+        <button id="cancel-delete-route" class="panel-action" type="button">Keep route</button>
+      </div>
+    </div>` : `<details class="route-more-actions">
+      <summary>More actions <i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
+      <div class="secondary-actions-row">
+        <button class="secondary-action" id="rename-route-panel" type="button"><i class="fa-solid fa-i-cursor" aria-hidden="true"></i> Rename</button>
+        <button class="secondary-action" id="share-route-panel" type="button"><i class="fa-solid fa-link" aria-hidden="true"></i> Share</button>
+        <button class="secondary-action" id="export-geojson-panel" type="button"><i class="fa-solid fa-file-code" aria-hidden="true"></i> GeoJSON</button>
+        <button class="secondary-action" id="export-gpx-panel" type="button"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> GPX</button>
+        <button class="secondary-action danger-action" id="delete-route-panel" type="button"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>
+      </div>
+      <div class="panel-status" id="share-status" aria-live="polite"></div>
+    </details>`}` : ''}`;
+
+  panelContent.querySelector('#back-to-library').onclick = function() {
+    panelView = 'library';
+    renamingRoute = false;
+    confirmingDelete = false;
+    routePanelNotice = '';
+    showRoutePanelContent();
+  };
+
+  if (renamingRoute) {
+    const form = panelContent.querySelector('#rename-route-form');
+    const input = panelContent.querySelector('#route-name-input');
+    form.onsubmit = function(event) {
+      event.preventDefault();
+      const name = input.value.trim();
+      if (!name) return;
+      window.renameRouteInList(context.mode, context.index, name);
+      renamingRoute = false;
+      routePanelNotice = 'Route name updated.';
+      showRoutePanelContent();
+      updateRouteFabLabel();
+    };
+    panelContent.querySelector('#cancel-rename-route').onclick = function() {
+      renamingRoute = false;
+      routePanelNotice = '';
+      showRoutePanelContent();
+    };
+    window.requestAnimationFrame(() => {
+      input.focus({ preventScroll: true });
+      input.select();
+    });
+    return;
+  }
+
+  panelContent.querySelector('#add-route-panel').onclick = startRouteDrawing;
+  panelContent.querySelector('#edit-route-panel').onclick = function() {
+    editingMode = true;
+    drawingMode = false;
+    routePanelNotice = '';
+    showRoutePanelContent();
+    if (activeDrawControl && activeDrawControl._toolbars?.edit) {
+      activeDrawControl._toolbars.edit._modes.edit.handler.enable();
+    }
+  };
+
+  if (confirmingDelete) {
+    panelContent.querySelector('#cancel-delete-route').onclick = function() {
+      confirmingDelete = false;
+      showRoutePanelContent();
+    };
+    panelContent.querySelector('#confirm-delete-route').onclick = function() {
+      window.deleteRouteFromList(context.mode, context.index);
+      if (context.mode === 'uk') window.routeLayerUK.clearLayers();
+      else window.routeLayerWorld.clearLayers();
+      window.currentRouteIndex[context.mode] = null;
+      confirmingDelete = false;
+      panelView = 'library';
+      routePanelNotice = '';
+      showRoutePanelContent();
+      updateRouteFabLabel();
+    };
+  } else {
+    panelContent.querySelector('#rename-route-panel').onclick = function() {
+      renamingRoute = true;
+      routePanelNotice = '';
+      showRoutePanelContent();
+    };
+    panelContent.querySelector('#delete-route-panel').onclick = function() {
+      confirmingDelete = true;
+      showRoutePanelContent();
+    };
+    bindRouteShareAndExport(currentRoute);
+  }
+}
+
+function updateRouteFabLabel() {
+  const context = getActiveRouteContext();
+  const label = context ? `Open route details for ${context.route.name || 'Untitled route'}` : 'Open saved routes';
+  fab.setAttribute('aria-label', label);
+  fab.title = label;
+}
+
+function showRoutePanelContent() {
+  panel.classList.toggle('route-workflow-view', drawingMode || editingMode);
+  if (drawingMode || editingMode) {
+    showRouteWorkflow();
+    return;
+  }
+  const context = getActiveRouteContext();
+  if (panelView === 'details' && context) {
+    showActiveRouteDetails(context);
+  } else {
+    panelView = 'library';
+    showRouteLibrary();
   }
 }
 
@@ -558,33 +811,23 @@ mapUK.on(L.Draw.Event.CREATED, function (e) {
   editingMode = false;
   if (e.layerType === 'polyline') {
     const defaultName = getDefaultRouteName('uk');
-    let name = prompt("Name this route:", defaultName);
-    if (name !== null) {
-      name = name.trim() || defaultName;
-      window.routeLayerUK.clearLayers();
-      // Save to storage
-      window.saveRouteToList('uk', name, e.layer);
-
-      // Find index of this new route
-      const routes = window.getRouteList('uk');
-      const idx = routes.length - 1;
-      window.currentRouteIndex.uk = idx;
-
-      // Add to map
-      window.routeLayerUK.addLayer(e.layer);
-      window.updateRouteListUI('uk');
-
-      // Zoom to new route (with bottom panel padding)
-      if (e.layer.getBounds().isValid()) {
-        const panelHeight = 300; // or match your CSS panel height
-        mapUK.fitBounds(e.layer.getBounds(), {
-          paddingBottomRight: [0, panelHeight + 16],
-          paddingTopLeft: [0, 24]
-        });
-      }
+    window.routeLayerUK.clearLayers();
+    window.currentRouteIndex.uk = window.saveRouteToList('uk', defaultName, e.layer);
+    window.routeLayerUK.addLayer(e.layer);
+    window.updateRouteListUI('uk');
+    panelView = 'details';
+    renamingRoute = true;
+    routePanelNotice = '';
+    if (e.layer.getBounds().isValid()) {
+      const panelHeight = 300;
+      mapUK.fitBounds(e.layer.getBounds(), {
+        paddingBottomRight: [0, panelHeight + 16],
+        paddingTopLeft: [0, 24]
+      });
     }
   }
   showRoutePanelContent();
+  updateRouteFabLabel();
 });
 
 mapWorld.on(L.Draw.Event.CREATED, function (e) {
@@ -592,26 +835,23 @@ mapWorld.on(L.Draw.Event.CREATED, function (e) {
   editingMode = false;
   if (e.layerType === 'polyline') {
     const defaultName = getDefaultRouteName('world');
-    let name = prompt("Name this route:", defaultName);
-    if (name !== null) {
-      name = name.trim() || defaultName;
-      window.routeLayerWorld.clearLayers();
-      window.saveRouteToList('world', name, e.layer);
-      const routes = window.getRouteList('world');
-      const idx = routes.length - 1;
-      window.currentRouteIndex.world = idx;
-      window.routeLayerWorld.addLayer(e.layer);
-      window.updateRouteListUI('world');
-      if (e.layer.getBounds().isValid()) {
-        const panelHeight = 300;
-        mapWorld.fitBounds(e.layer.getBounds(), {
-          paddingBottomRight: [0, panelHeight + 16],
-          paddingTopLeft: [0, 24]
-        });
-      }
+    window.routeLayerWorld.clearLayers();
+    window.currentRouteIndex.world = window.saveRouteToList('world', defaultName, e.layer);
+    window.routeLayerWorld.addLayer(e.layer);
+    window.updateRouteListUI('world');
+    panelView = 'details';
+    renamingRoute = true;
+    routePanelNotice = '';
+    if (e.layer.getBounds().isValid()) {
+      const panelHeight = 300;
+      mapWorld.fitBounds(e.layer.getBounds(), {
+        paddingBottomRight: [0, panelHeight + 16],
+        paddingTopLeft: [0, 24]
+      });
     }
   }
   showRoutePanelContent();
+  updateRouteFabLabel();
 });
 
 mapUK.on(L.Draw.Event.EDITED, function (e) {
@@ -623,7 +863,10 @@ mapUK.on(L.Draw.Event.EDITED, function (e) {
     let geojson = layer.toGeoJSON();
     window.updateRouteInList('uk', idx, geojson);
   });
+  panelView = 'details';
+  routePanelNotice = 'Route changes saved.';
   showRoutePanelContent();
+  updateRouteFabLabel();
 });
 mapWorld.on(L.Draw.Event.EDITED, function (e) {
   editingMode = false;
@@ -634,7 +877,10 @@ mapWorld.on(L.Draw.Event.EDITED, function (e) {
     let geojson = layer.toGeoJSON();
     window.updateRouteInList('world', idx, geojson);
   });
+  panelView = 'details';
+  routePanelNotice = 'Route changes saved.';
   showRoutePanelContent();
+  updateRouteFabLabel();
 });
 
 // Save map state for persistence
@@ -662,6 +908,7 @@ if (sharedRoute && sharedRoute.geojson) {
   window.saveRouteToList(sharedMode, sharedRoute.name || getDefaultRouteName(sharedMode), layer);
   const routes = window.getRouteList(sharedMode);
   window.currentRouteIndex[sharedMode] = routes.length - 1;
+  panelView = 'details';
   if (layer.getBounds().isValid()) {
     const panelHeight = 300;
     const map = sharedMode === 'uk' ? mapUK : mapWorld;
@@ -713,6 +960,7 @@ window.switchMap = function(mode) {
     currentMode = 'uk';
   }
   updateGlobeIcon();
+  updateRouteFabLabel();
   saveMapState();
 };
 
@@ -731,3 +979,4 @@ function updateGlobeIcon() {
 
 // Initial state
 updateGlobeIcon();
+updateRouteFabLabel();
