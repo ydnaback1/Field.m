@@ -35,7 +35,13 @@ function prepareMeasureControl(control) {
   var container = control.getContainer();
   var toggle = container.querySelector('.leaflet-measure-toggle');
   var actions = container.querySelectorAll('.leaflet-measure-actions a');
+  var actionLabels = ['Measure distance', 'Measure area'];
   if (!toggle) return;
+
+  actions.forEach(function(action, index) {
+    action.textContent = actionLabels[index] || action.textContent;
+    action.setAttribute('aria-label', action.textContent);
+  });
 
   toggle.setAttribute('aria-expanded', 'false');
   toggle.setAttribute('aria-haspopup', 'true');
@@ -83,6 +89,7 @@ function addUKControls(map, baseLayers) {
     var measureControl = L.control.measure({
         position: 'topleft',
         collapsed: true,
+        title: 'Measure',
         color: '#FF0080'
     }).addTo(map);
     labelControl(measureControl, '.leaflet-measure-toggle', 'Measure distance');
@@ -102,6 +109,7 @@ function addWorldControls(map) {
     var measureControl = L.control.measure({
         position: 'topleft',
         collapsed: true,
+        title: 'Measure',
         color: '#3388ff'
     }).addTo(map);
     labelControl(measureControl, '.leaflet-measure-toggle', 'Measure distance');
