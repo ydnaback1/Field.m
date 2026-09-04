@@ -160,7 +160,13 @@ const ROUTE_COLOR_CHOICES = [
   { value: '#3388ff', label: 'Blue' },
   { value: '#009e73', label: 'Green' },
   { value: '#e69f00', label: 'Orange' },
-  { value: '#cc79a7', label: 'Purple' }
+  { value: '#cc79a7', label: 'Purple' },
+  { value: '#c73e3a', label: 'Red' },
+  { value: '#007c91', label: 'Teal' },
+  { value: '#5b4b9a', label: 'Indigo' },
+  { value: '#d55e00', label: 'Vermilion' },
+  { value: '#3b6ea5', label: 'Slate blue' },
+  { value: '#4d7c0f', label: 'Forest green' }
 ];
 
 // --- Panel Main Function ---
@@ -204,15 +210,26 @@ function getAnnotationById(route, id) {
   return window.getRouteAnnotations(route).find(annotation => annotation && annotation.id === id) || null;
 }
 
+function getRouteMarkerTextColor(color) {
+  const hex = String(color || '').replace('#', '');
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return '#fff';
+  const channels = [0, 2, 4].map(offset => parseInt(hex.slice(offset, offset + 2), 16) / 255);
+  const luminance = channels.map(value => value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+    .reduce((total, value, index) => total + value * [0.2126, 0.7152, 0.0722][index], 0);
+  return luminance > 0.42 ? '#18202a' : '#fff';
+}
+
 function renderRouteAnnotations(mode, route) {
   const notesLayer = getRouteNotesLayer(mode);
+  const routeColor = window.getRouteColor(mode, route);
+  const markerTextColor = getRouteMarkerTextColor(routeColor);
   notesLayer.clearLayers();
   window.getRouteAnnotations(route).forEach(annotation => {
     if (!Number.isFinite(Number(annotation.lat)) || !Number.isFinite(Number(annotation.lng))) return;
     const marker = L.marker([annotation.lat, annotation.lng], {
       icon: L.divIcon({
         className: 'route-note-marker',
-        html: '<i class="fa-solid fa-note-sticky" aria-hidden="true"></i>',
+        html: `<span class="route-note-marker-inner" style="--route-color: ${escapeAttribute(routeColor)}; --route-note-icon-color: ${markerTextColor}"><i class="fa-solid fa-note-sticky" aria-hidden="true"></i></span>`,
         iconSize: [28, 28],
         iconAnchor: [14, 28]
       })
@@ -392,8 +409,32 @@ function openRouteFromLibrary(mode, index) {
   selectedAnnotationId = null;
   routePanelNotice = '';
   setRoutePanelOpen(true);
+  scheduleRouteFitToVisibleMap(mode);
   updateRouteFabLabel();
 }
+
+function isMobileRouteLayout() {
+  return window.matchMedia('(max-width: 700px)').matches;
+}
+
+function scheduleRouteFitToVisibleMap(mode) {
+  if (!isMobileRouteLayout()) return;
+  window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+    const context = getActiveRouteContext();
+    if (!context || context.mode !== mode || !panel.classList.contains('open')) return;
+    const routeLayer = mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
+    const bounds = routeLayer.getBounds();
+    if (!bounds.isValid()) return;
+    const panelHeight = Math.ceil(panel.getBoundingClientRect().height);
+    const map = mode === 'uk' ? mapUK : mapWorld;
+    map.fitBounds(bounds, {
+      paddingTopLeft: [18, 20],
+      paddingBottomRight: [18, panelHeight + 20]
+    });
+  }));
+}
+
+window.isMobileRouteLayout = isMobileRouteLayout;
 
 function renderRouteLibraryResults() {
   const results = panelContent.querySelector('#route-library-results');
@@ -867,6 +908,7 @@ function showActiveRouteDetails(context) {
       if (!window.updateRouteColorInList(context.mode, context.index, color)) return;
       const routeLayer = context.mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
       window.applyRouteStyle(routeLayer, context.mode, { color });
+      renderRouteAnnotations(context.mode, window.getRouteList(context.mode)[context.index]);
       routePanelNotice = 'Route colour updated.';
       showRoutePanelContent();
     };

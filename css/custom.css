@@ -611,7 +611,9 @@ select {
 }
 
 .route-color-options {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(6, 26px);
+  justify-content: end;
   gap: 7px;
 }
 
@@ -643,6 +645,11 @@ select {
 }
 
 .route-note-marker {
+  background: transparent;
+  border: 0;
+}
+
+.route-note-marker-inner {
   width: 28px;
   height: 28px;
   display: flex;
@@ -650,9 +657,9 @@ select {
   justify-content: center;
   border: 2px solid #fff;
   border-radius: 50% 50% 50% 0;
-  background: var(--accent);
+  background: var(--route-color, var(--accent));
   box-shadow: 0 2px 7px rgba(0, 0, 0, 0.3);
-  color: var(--on-accent);
+  color: var(--route-note-icon-color, var(--on-accent));
   font-size: 0.78rem;
   transform: rotate(-45deg);
 }
@@ -675,6 +682,26 @@ select {
 #panel-content .route-color-option.is-selected {
   border-color: var(--panel-bg);
   box-shadow: 0 0 0 2px var(--route-color);
+}
+
+@media (max-width: 480px) {
+  .route-color-control {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .route-color-options {
+    display: flex;
+    justify-content: space-between;
+    gap: 4px;
+  }
+
+  #panel-content .route-color-option {
+    width: 24px;
+    min-width: 24px;
+    min-height: 24px;
+  }
 }
 
 .workflow-heading {

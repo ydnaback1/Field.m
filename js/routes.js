@@ -143,18 +143,18 @@ function loadRouteByIndex(mode, idx) {
     if (!routes[idx] || !routes[idx].geojson) return false;
     const route = routes[idx];
     let layer = L.geoJSON(route.geojson, { style: getRouteStyle(mode, route) });
-    const panelHeight = 200;
-    const padding = { paddingBottomRight: [0, panelHeight + 16], paddingTopLeft: [0, 24] };
+    const isMobileLayout = typeof window.isMobileRouteLayout === 'function' && window.isMobileRouteLayout();
+    const padding = { paddingBottomRight: [0, 216], paddingTopLeft: [0, 24] };
 
     if (mode === 'uk') {
         window.routeLayerUK.clearLayers();
         layer.eachLayer(l => window.routeLayerUK.addLayer(l));
-        if (layer.getBounds().isValid()) mapUK.fitBounds(layer.getBounds(), padding);
+        if (!isMobileLayout && layer.getBounds().isValid()) mapUK.fitBounds(layer.getBounds(), padding);
         window.currentRouteIndex.uk = Number(idx);
     } else {
         window.routeLayerWorld.clearLayers();
         layer.eachLayer(l => window.routeLayerWorld.addLayer(l));
-        if (layer.getBounds().isValid()) mapWorld.fitBounds(layer.getBounds(), padding);
+        if (!isMobileLayout && layer.getBounds().isValid()) mapWorld.fitBounds(layer.getBounds(), padding);
         window.currentRouteIndex.world = Number(idx);
     }
     if (typeof window.renderRouteAnnotations === 'function') window.renderRouteAnnotations(mode, route);
