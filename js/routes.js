@@ -9,6 +9,29 @@ function getRouteList(mode) {
     return Array.isArray(arr) ? arr : [];
 }
 
+const DEFAULT_ROUTE_COLORS = {
+    uk: '#ff33da',
+    world: '#3388ff'
+};
+
+function getRouteColor(mode, route) {
+    return route && typeof route.color === 'string' && route.color ? route.color : DEFAULT_ROUTE_COLORS[mode];
+}
+
+function getRouteStyle(mode, route) {
+    return { color: getRouteColor(mode, route), weight: 5 };
+}
+
+function applyRouteStyle(layer, mode, route) {
+    if (!layer) return;
+    if (typeof layer.setStyle === 'function') layer.setStyle(getRouteStyle(mode, route));
+    if (typeof layer.eachLayer === 'function') {
+        layer.eachLayer(child => {
+            if (typeof child.setStyle === 'function') child.setStyle(getRouteStyle(mode, route));
+        });
+    }
+}
+
 function saveRouteToList(mode, name, layer) {
     const geojson = layer.toGeoJSON();
     let arr = getRouteList(mode);
@@ -33,6 +56,17 @@ function renameRouteInList(mode, idx, name) {
     let arr = getRouteList(mode);
     if (arr[idx]) {
         arr[idx].name = name;
+        arr[idx].updatedAt = new Date().toISOString();
+        localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
+        return true;
+    }
+    return false;
+}
+
+function updateRouteColorInList(mode, idx, color) {
+    let arr = getRouteList(mode);
+    if (arr[idx]) {
+        arr[idx].color = color;
         arr[idx].updatedAt = new Date().toISOString();
         localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
         return true;
@@ -67,12 +101,8 @@ window.currentRouteIndex = { uk: null, world: null };
 function loadRouteByIndex(mode, idx) {
     const routes = getRouteList(mode);
     if (!routes[idx] || !routes[idx].geojson) return false;
-    const geojson = routes[idx].geojson;
-    let layer = L.geoJSON(geojson, {
-        style: mode === 'uk'
-            ? { color: "#ff33da", weight: 5 }
-            : { color: "#3388ff", weight: 5 }
-    });
+    const route = routes[idx];
+    let layer = L.geoJSON(route.geojson, { style: getRouteStyle(mode, route) });
     const panelHeight = 200;
     const padding = { paddingBottomRight: [0, panelHeight + 16], paddingTopLeft: [0, 24] };
 
@@ -94,6 +124,10 @@ window.getRouteList = getRouteList;
 window.saveRouteToList = saveRouteToList;
 window.updateRouteInList = updateRouteInList;
 window.renameRouteInList = renameRouteInList;
+window.updateRouteColorInList = updateRouteColorInList;
 window.deleteRouteFromList = deleteRouteFromList;
 window.updateRouteListUI = updateRouteListUI;
 window.loadRouteByIndex = loadRouteByIndex;
+window.getRouteColor = getRouteColor;
+window.getRouteStyle = getRouteStyle;
+window.applyRouteStyle = applyRouteStyle;

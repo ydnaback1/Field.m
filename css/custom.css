@@ -443,7 +443,7 @@ select {
   justify-content: center;
   border-radius: 12px;
   background: var(--surface-hover);
-  color: var(--accent-strong);
+  color: var(--route-color, var(--accent-strong));
 }
 
 .route-row-copy {
@@ -590,6 +590,45 @@ select {
 
 .active-route-actions {
   margin-bottom: 14px;
+}
+
+.route-color-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-hover);
+}
+
+.route-color-label {
+  color: var(--muted-text);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.route-color-options {
+  display: flex;
+  gap: 7px;
+}
+
+#panel-content .route-color-option {
+  width: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--route-color);
+  cursor: pointer;
+}
+
+#panel-content .route-color-option.is-selected {
+  border-color: var(--panel-bg);
+  box-shadow: 0 0 0 2px var(--route-color);
 }
 
 .workflow-heading {

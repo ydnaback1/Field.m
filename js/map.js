@@ -150,6 +150,13 @@ let routeLibraryFilter = 'all';
 let renamingRoute = false;
 let confirmingDelete = false;
 let routePanelNotice = '';
+const ROUTE_COLOR_CHOICES = [
+  { value: '#ff33da', label: 'Magenta' },
+  { value: '#3388ff', label: 'Blue' },
+  { value: '#009e73', label: 'Green' },
+  { value: '#e69f00', label: 'Orange' },
+  { value: '#cc79a7', label: 'Purple' }
+];
 
 // --- Panel Main Function ---
 function getDefaultRouteName(mode) {
@@ -391,7 +398,7 @@ function renderRouteLibraryResults() {
     button.setAttribute('aria-label', `Open ${routeName}, ${getModeLabel(item.mode)}${distance ? `, ${distance}` : ''}`);
     if (isActive) button.setAttribute('aria-current', 'true');
     button.innerHTML = `
-      <span class="route-row-icon" aria-hidden="true"><i class="fa-solid fa-route"></i></span>
+      <span class="route-row-icon" style="--route-color: ${escapeAttribute(window.getRouteColor(item.mode, item.route))}" aria-hidden="true"><i class="fa-solid fa-route"></i></span>
       <span class="route-row-copy">
         <span class="route-row-title">${escapeHtml(routeName)}</span>
         <span class="route-row-meta">${meta.map(value => `<span>${escapeHtml(value)}</span>`).join('<span aria-hidden="true">·</span>')}</span>
@@ -615,6 +622,12 @@ function showActiveRouteDetails(context) {
       ${km ? `<span class="metric-pill"><i class="fa-solid fa-person-walking" aria-hidden="true"></i><span><strong>${km}</strong> km <span class="metric-secondary">${mi} mi</span></span></span>` : ''}
       ${timeStr ? `<span class="metric-pill"><i class="fa-solid fa-stopwatch" aria-hidden="true"></i><strong>${timeStr}</strong></span>` : ''}
     </div>
+    <div class="route-color-control" role="group" aria-label="Route colour">
+      <span class="route-color-label">Route colour</span>
+      <div class="route-color-options">
+        ${ROUTE_COLOR_CHOICES.map(choice => `<button type="button" class="route-color-option${window.getRouteColor(context.mode, currentRoute).toLowerCase() === choice.value ? ' is-selected' : ''}" data-route-color="${choice.value}" aria-label="${choice.label}" aria-pressed="${window.getRouteColor(context.mode, currentRoute).toLowerCase() === choice.value}" title="${choice.label}" style="--route-color: ${choice.value}"></button>`).join('')}
+      </div>
+    </div>
     ${routePanelNotice ? `<div class="panel-notice" role="status">${escapeHtml(routePanelNotice)}</div>` : ''}
     <div class="route-actions-row active-route-actions">
       <button id="edit-route-panel" class="primary-action" type="button"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit route</span></button>
@@ -672,6 +685,16 @@ function showActiveRouteDetails(context) {
   }
 
   panelContent.querySelector('#add-route-panel').onclick = startRouteDrawing;
+  panelContent.querySelectorAll('[data-route-color]').forEach(button => {
+    button.onclick = function() {
+      const color = button.dataset.routeColor;
+      if (!window.updateRouteColorInList(context.mode, context.index, color)) return;
+      const routeLayer = context.mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
+      window.applyRouteStyle(routeLayer, context.mode, { color });
+      routePanelNotice = 'Route colour updated.';
+      showRoutePanelContent();
+    };
+  });
   panelContent.querySelector('#edit-route-panel').onclick = function() {
     editingMode = true;
     drawingMode = false;
@@ -813,6 +836,7 @@ mapUK.on(L.Draw.Event.CREATED, function (e) {
     const defaultName = getDefaultRouteName('uk');
     window.routeLayerUK.clearLayers();
     window.currentRouteIndex.uk = window.saveRouteToList('uk', defaultName, e.layer);
+    window.applyRouteStyle(e.layer, 'uk', window.getRouteList('uk')[window.currentRouteIndex.uk]);
     window.routeLayerUK.addLayer(e.layer);
     window.updateRouteListUI('uk');
     panelView = 'details';
@@ -837,6 +861,7 @@ mapWorld.on(L.Draw.Event.CREATED, function (e) {
     const defaultName = getDefaultRouteName('world');
     window.routeLayerWorld.clearLayers();
     window.currentRouteIndex.world = window.saveRouteToList('world', defaultName, e.layer);
+    window.applyRouteStyle(e.layer, 'world', window.getRouteList('world')[window.currentRouteIndex.world]);
     window.routeLayerWorld.addLayer(e.layer);
     window.updateRouteListUI('world');
     panelView = 'details';
@@ -901,7 +926,7 @@ mapWorld.on('moveend zoomend', saveMapState);
 const sharedRoute = getSharedRouteFromUrl();
 if (sharedRoute && sharedRoute.geojson) {
   const sharedMode = currentMode || 'uk';
-  const layer = L.geoJSON(sharedRoute.geojson);
+  const layer = L.geoJSON(sharedRoute.geojson, { style: window.getRouteStyle(sharedMode, sharedRoute) });
   const targetLayer = sharedMode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
   targetLayer.clearLayers();
   layer.eachLayer(l => targetLayer.addLayer(l));
