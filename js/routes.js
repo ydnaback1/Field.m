@@ -32,11 +32,13 @@ function applyRouteStyle(layer, mode, route) {
     }
 }
 
-function saveRouteToList(mode, name, layer) {
+function saveRouteToList(mode, name, layer, routing) {
     const geojson = layer.toGeoJSON();
     let arr = getRouteList(mode);
     const now = new Date().toISOString();
-    arr.push({ name, geojson, createdAt: now, updatedAt: now });
+    const route = { name, geojson, createdAt: now, updatedAt: now };
+    if (routing) route.routing = routing;
+    arr.push(route);
     localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
     return arr.length - 1;
 }

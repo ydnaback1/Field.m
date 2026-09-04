@@ -77,6 +77,8 @@ window.routeLayerUK = new L.FeatureGroup().addTo(mapUK);
 window.routeLayerWorld = new L.FeatureGroup().addTo(mapWorld);
 window.routeNotesLayerUK = new L.FeatureGroup().addTo(mapUK);
 window.routeNotesLayerWorld = new L.FeatureGroup().addTo(mapWorld);
+window.routeDraftLayerUK = new L.FeatureGroup().addTo(mapUK);
+window.routeDraftLayerWorld = new L.FeatureGroup().addTo(mapWorld);
 
 // Base layers
 var ukBaseLayers = getUKBaseLayers(serviceUrl, apiKey);
@@ -145,6 +147,8 @@ let activeDrawControl = null;
 
 let drawingMode = false;
 let editingMode = false;
+let routeCreationMode = 'free';
+let pathDraft = null;
 let panelView = 'library';
 let routeLibraryQuery = '';
 let routeLibrarySort = 'recent';
@@ -504,7 +508,6 @@ function renderRouteLibraryResults() {
 }
 
 function startRouteDrawing() {
-  const mode = window.currentMode || 'uk';
   drawingMode = true;
   editingMode = false;
   panelView = 'details';
@@ -512,10 +515,102 @@ function startRouteDrawing() {
   confirmingDelete = false;
   routePanelNotice = '';
   showRoutePanelContent();
-  const drawControl = activeDrawControl;
-  if (drawControl && drawControl._toolbars && drawControl._toolbars.draw) {
-    drawControl._toolbars.draw._modes.polyline.handler.enable();
+  setRouteCreationMode(routeCreationMode);
+}
+
+function getDraftLayer(mode) {
+  return mode === 'uk' ? window.routeDraftLayerUK : window.routeDraftLayerWorld;
+}
+
+function clearPathDraft() {
+  window.routeDraftLayerUK.clearLayers();
+  window.routeDraftLayerWorld.clearLayers();
+  pathDraft = null;
+}
+
+function createPathDraft(mode) {
+  clearPathDraft();
+  pathDraft = { mode, waypoints: [], geojson: null, requestId: 0, waiting: false, error: '' };
+  return pathDraft;
+}
+
+function renderPathDraft() {
+  if (!pathDraft) return;
+  const layer = getDraftLayer(pathDraft.mode);
+  layer.clearLayers();
+  if (pathDraft.geojson) {
+    L.geoJSON(pathDraft.geojson, { style: { color: '#FF9500', weight: 5 } }).eachLayer(item => layer.addLayer(item));
   }
+  pathDraft.waypoints.forEach(function(waypoint, index) {
+    layer.addLayer(L.marker([waypoint[1], waypoint[0]], {
+      interactive: false,
+      icon: L.divIcon({
+        className: 'route-waypoint-marker',
+        html: `<span>${index + 1}</span>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      })
+    }));
+  });
+}
+
+async function requestPathRoute() {
+  if (!pathDraft || pathDraft.waypoints.length < 2) return;
+  if (!CONFIG.orsApiKey) {
+    pathDraft.error = 'Path routing is unavailable because the ORS key is missing.';
+    showRoutePanelContent();
+    return;
+  }
+  const requestId = ++pathDraft.requestId;
+  pathDraft.waiting = true;
+  pathDraft.error = '';
+  showRoutePanelContent();
+  try {
+    const response = await fetch('https://api.heigit.org/openrouteservice/v2/directions/foot-hiking/geojson', {
+      method: 'POST',
+      headers: { Authorization: CONFIG.orsApiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coordinates: pathDraft.waypoints })
+    });
+    if (!response.ok) throw new Error('Routing request failed');
+    const geojson = await response.json();
+    if (!geojson || !geojson.features || !geojson.features.length) throw new Error('No route returned');
+    if (!pathDraft || requestId !== pathDraft.requestId) return;
+    pathDraft.geojson = geojson;
+    pathDraft.error = '';
+    renderPathDraft();
+  } catch (error) {
+    if (!pathDraft || requestId !== pathDraft.requestId) return;
+    pathDraft.error = 'Could not follow paths. Your waypoints are still available; try again or add another point.';
+  } finally {
+    if (pathDraft && requestId === pathDraft.requestId) {
+      pathDraft.waiting = false;
+      showRoutePanelContent();
+    }
+  }
+}
+
+function handlePathClick(mode, event) {
+  if (!drawingMode || routeCreationMode !== 'paths' || !pathDraft || pathDraft.mode !== mode) return;
+  pathDraft.waypoints.push([event.latlng.lng, event.latlng.lat]);
+  pathDraft.geojson = null;
+  pathDraft.error = '';
+  renderPathDraft();
+  if (pathDraft.waypoints.length > 1) requestPathRoute();
+  else showRoutePanelContent();
+}
+
+function setRouteCreationMode(nextMode) {
+  routeCreationMode = nextMode;
+  const mode = window.currentMode || 'uk';
+  const handler = activeDrawControl?._toolbars?.draw?._modes.polyline.handler;
+  if (nextMode === 'paths') {
+    if (handler) handler.disable();
+    if (!pathDraft || pathDraft.mode !== mode) createPathDraft(mode);
+  } else {
+    clearPathDraft();
+    if (handler) handler.enable();
+  }
+  if (drawingMode) showRoutePanelContent();
 }
 
 function startNotePlacement() {
@@ -722,10 +817,15 @@ function showRouteWorkflow() {
   panelContent.innerHTML = `
     <div class="panel-heading workflow-heading">
       <div class="panel-eyebrow">${drawingMode ? `New ${getModeLabel(mode)} route` : 'Editing route'}</div>
-      <h2 class="route-title">${drawingMode ? 'Draw your route' : `Edit ${escapeHtml(context?.route.name || 'route')}`}</h2>
-      <p class="panel-hint">${drawingMode ? 'Tap the map to add points. Use the map while this sheet stays open.' : 'Move route points on the map, then save or discard your changes.'}</p>
+      <h2 class="route-title">${drawingMode ? (routeCreationMode === 'paths' ? 'Follow paths' : 'Draw your route') : `Edit ${escapeHtml(context?.route.name || 'route')}`}</h2>
+      <p class="panel-hint">${drawingMode ? (routeCreationMode === 'paths' ? 'Tap control waypoints on the map. The route follows hiking paths between them.' : 'Tap the map to add points. Use the map while this sheet stays open.') : 'Move route points on the map, then save or discard your changes.'}</p>
     </div>
-    <div class="workflow-tip"><span>1</span>${drawingMode ? 'Add at least two points on the map' : 'Drag any point to adjust the route'}</div>
+    ${drawingMode ? `<div class="route-creation-mode" role="group" aria-label="Route creation mode">
+      <button id="follow-paths-mode" class="${routeCreationMode === 'paths' ? 'selected' : ''}" type="button" aria-pressed="${routeCreationMode === 'paths'}">Follow paths</button>
+      <button id="draw-freely-mode" class="${routeCreationMode === 'free' ? 'selected' : ''}" type="button" aria-pressed="${routeCreationMode === 'free'}">Draw freely</button>
+    </div>` : ''}
+    <div class="workflow-tip"><span>1</span>${drawingMode ? (routeCreationMode === 'paths' ? `${pathDraft?.waypoints.length || 0} waypoint${(pathDraft?.waypoints.length || 0) === 1 ? '' : 's'}${pathDraft?.waiting ? ' · Finding paths…' : ''}` : 'Add at least two points on the map') : 'Drag any point to adjust the route'}</div>
+    ${drawingMode && routeCreationMode === 'paths' && pathDraft?.error ? `<p class="route-workflow-error" role="alert">${escapeHtml(pathDraft.error)}</p>` : ''}
     <div class="route-actions-row">
       <button id="${drawingMode ? 'save-route-panel' : 'save-edit-route-panel'}" class="primary-action primary-action-wide" type="button">
         <i class="fa-solid fa-check" aria-hidden="true"></i><span>${drawingMode ? 'Finish route' : 'Save changes'}</span>
@@ -733,10 +833,40 @@ function showRouteWorkflow() {
       <button id="cancel-route-workflow" class="panel-action" type="button">Cancel</button>
     </div>`;
 
+  if (drawingMode) {
+    panelContent.querySelector('#follow-paths-mode').onclick = function() { setRouteCreationMode('paths'); };
+    panelContent.querySelector('#draw-freely-mode').onclick = function() { setRouteCreationMode('free'); };
+  }
   const finishButton = panelContent.querySelector(drawingMode ? '#save-route-panel' : '#save-edit-route-panel');
   finishButton.onclick = function() {
     if (!activeDrawControl) return;
-    if (drawingMode && activeDrawControl._toolbars?.draw) {
+    if (drawingMode && routeCreationMode === 'paths') {
+      if (!pathDraft?.geojson || pathDraft.waiting) {
+        if (pathDraft) {
+          pathDraft.error = pathDraft.waiting ? 'Still finding paths. Please wait before finishing.' : 'Add at least two waypoints and wait for a route.';
+          showRoutePanelContent();
+        }
+        return;
+      }
+      const routeLayer = L.geoJSON(pathDraft.geojson);
+      const defaultName = getDefaultRouteName(mode);
+      const targetLayer = mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
+      const notesLayer = mode === 'uk' ? window.routeNotesLayerUK : window.routeNotesLayerWorld;
+      targetLayer.clearLayers();
+      notesLayer.clearLayers();
+      window.currentRouteIndex[mode] = window.saveRouteToList(mode, defaultName, routeLayer, {
+        provider: 'ors', profile: 'foot-hiking', waypoints: pathDraft.waypoints.slice()
+      });
+      window.applyRouteStyle(routeLayer, mode, window.getRouteList(mode)[window.currentRouteIndex[mode]]);
+      routeLayer.eachLayer(item => targetLayer.addLayer(item));
+      clearPathDraft();
+      drawingMode = false;
+      panelView = 'details';
+      renamingRoute = true;
+      window.updateRouteListUI(mode);
+      showRoutePanelContent();
+      updateRouteFabLabel();
+    } else if (drawingMode && activeDrawControl._toolbars?.draw) {
       activeDrawControl._toolbars.draw._modes.polyline.handler.completeShape();
     } else if (editingMode && activeDrawControl._toolbars?.edit) {
       const handler = activeDrawControl._toolbars.edit._modes.edit.handler;
@@ -749,6 +879,7 @@ function showRouteWorkflow() {
     if (activeDrawControl && drawingMode && activeDrawControl._toolbars?.draw) {
       activeDrawControl._toolbars.draw._modes.polyline.handler.disable();
     }
+    if (drawingMode && routeCreationMode === 'paths') clearPathDraft();
     if (activeDrawControl && editingMode && activeDrawControl._toolbars?.edit) {
       const handler = activeDrawControl._toolbars.edit._modes.edit.handler;
       if (typeof handler.revertLayers === 'function') handler.revertLayers();
@@ -1172,6 +1303,8 @@ function handleNotePlacement(mode, event) {
 
 mapUK.on('click', function(event) { handleNotePlacement('uk', event); });
 mapWorld.on('click', function(event) { handleNotePlacement('world', event); });
+mapUK.on('click', function(event) { handlePathClick('uk', event); });
+mapWorld.on('click', function(event) { handlePathClick('world', event); });
 
 // Save map state for persistence
 function saveMapState() {
