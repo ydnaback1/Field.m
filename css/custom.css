@@ -443,7 +443,7 @@ select {
   justify-content: center;
   border-radius: 12px;
   background: var(--surface-hover);
-  color: var(--accent-strong);
+  color: var(--route-color, var(--accent-strong));
 }
 
 .route-row-copy {
@@ -590,6 +590,118 @@ select {
 
 .active-route-actions {
   margin-bottom: 14px;
+}
+
+.route-color-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-hover);
+}
+
+.route-color-label {
+  color: var(--muted-text);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.route-color-options {
+  display: grid;
+  grid-template-columns: repeat(6, 26px);
+  justify-content: end;
+  gap: 7px;
+}
+
+.route-note-form {
+  display: grid;
+  gap: 8px;
+}
+
+.route-note-form label {
+  color: var(--muted-text);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.route-note-form label span {
+  font-weight: 500;
+}
+
+.route-note-form textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.route-note-copy {
+  margin: 8px 0 0;
+  color: var(--panel-text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.route-note-marker {
+  background: transparent;
+  border: 0;
+}
+
+.route-note-marker-inner {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+  border-radius: 50% 50% 50% 0;
+  background: var(--route-color, var(--accent));
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.3);
+  color: var(--route-note-icon-color, var(--on-accent));
+  font-size: 0.78rem;
+  transform: rotate(-45deg);
+}
+
+.route-note-marker i {
+  transform: rotate(45deg);
+}
+
+#panel-content .route-color-option {
+  width: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--route-color);
+  cursor: pointer;
+}
+
+#panel-content .route-color-option.is-selected {
+  border-color: var(--panel-bg);
+  box-shadow: 0 0 0 2px var(--route-color);
+}
+
+@media (max-width: 480px) {
+  .route-color-control {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .route-color-options {
+    display: flex;
+    justify-content: space-between;
+    gap: 4px;
+  }
+
+  #panel-content .route-color-option {
+    width: 24px;
+    min-width: 24px;
+    min-height: 24px;
+  }
 }
 
 .workflow-heading {
