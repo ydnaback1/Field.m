@@ -17,20 +17,45 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Generate runtime config
-        run: |
-          cat > config.runtime.js <<EOF
-          window.FIELD_MAPS_CONFIG = { apiKey: "${FIELD_MAPS_API_KEY}" };
-          EOF
+      - name: Validate runtime secrets
+        shell: bash
         env:
           FIELD_MAPS_API_KEY: ${{ secrets.FIELD_MAPS_API_KEY }}
+          FIELD_MAPS_ORS_API_KEY: ${{ secrets.FIELD_MAPS_ORS_API_KEY }}
+        run: |
+          if [ -z "$FIELD_MAPS_API_KEY" ]; then
+            echo "::error::Required secret FIELD_MAPS_API_KEY is missing or empty."
+            exit 1
+          fi
+
+          if [ -z "$FIELD_MAPS_ORS_API_KEY" ]; then
+            echo "::error::Required secret FIELD_MAPS_ORS_API_KEY is missing or empty."
+            exit 1
+          fi
+
+      - name: Generate runtime config
+        shell: bash
+        env:
+          FIELD_MAPS_API_KEY: ${{ secrets.FIELD_MAPS_API_KEY }}
+          FIELD_MAPS_ORS_API_KEY: ${{ secrets.FIELD_MAPS_ORS_API_KEY }}
+        run: |
+          cat > config.runtime.js <<EOF
+          window.FIELD_MAPS_CONFIG = {
+            apiKey: "${FIELD_MAPS_API_KEY}",
+            orsApiKey: "${FIELD_MAPS_ORS_API_KEY}"
+          };
+          EOF
+
+          test -s config.runtime.js
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
