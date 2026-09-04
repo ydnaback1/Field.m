@@ -805,6 +805,7 @@ function bindRouteShareAndExport(currentRoute) {
 
 function showActiveRouteDetails(context) {
   const currentRoute = context.route;
+  const annotations = window.getRouteAnnotations(currentRoute);
   const selectedAnnotation = selectedAnnotationId && getAnnotationById(currentRoute, selectedAnnotationId);
   if (selectedAnnotation) {
     showNoteDetails(context, selectedAnnotation);
@@ -837,17 +838,9 @@ function showActiveRouteDetails(context) {
       ${km ? `<span class="metric-pill"><i class="fa-solid fa-person-walking" aria-hidden="true"></i><span><strong>${km}</strong> km <span class="metric-secondary">${mi} mi</span></span></span>` : ''}
       ${timeStr ? `<span class="metric-pill"><i class="fa-solid fa-stopwatch" aria-hidden="true"></i><strong>${timeStr}</strong></span>` : ''}
     </div>
-    <div class="route-color-control" role="group" aria-label="Route colour">
-      <span class="route-color-label">Route colour</span>
-      <div class="route-color-options">
-        ${ROUTE_COLOR_CHOICES.map(choice => `<button type="button" class="route-color-option${window.getRouteColor(context.mode, currentRoute).toLowerCase() === choice.value ? ' is-selected' : ''}" data-route-color="${choice.value}" aria-label="${choice.label}" aria-pressed="${window.getRouteColor(context.mode, currentRoute).toLowerCase() === choice.value}" title="${choice.label}" style="--route-color: ${choice.value}"></button>`).join('')}
-      </div>
-    </div>
     ${routePanelNotice ? `<div class="panel-notice" role="status">${escapeHtml(routePanelNotice)}</div>` : ''}
     <div class="route-actions-row active-route-actions">
-      <button id="edit-route-panel" class="primary-action" type="button"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit route</span></button>
-      <button id="add-note-panel" class="panel-action" type="button"><i class="fa-solid fa-note-sticky" aria-hidden="true"></i><span>Add note</span></button>
-      <button id="add-route-panel" class="panel-action" type="button"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>New route</span></button>
+      <button id="edit-route-panel" class="primary-action primary-action-wide" type="button"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit route</span></button>
     </div>
     ${confirmingDelete ? `<div class="route-delete-confirm" role="alert">
       <div><strong>Delete this route?</strong><span>This removes it from this device.</span></div>
@@ -855,9 +848,28 @@ function showActiveRouteDetails(context) {
         <button id="confirm-delete-route" class="danger-solid" type="button">Delete</button>
         <button id="cancel-delete-route" class="panel-action" type="button">Keep route</button>
       </div>
-    </div>` : `<details class="route-more-actions">
+    </div>` : `<details class="route-disclosure route-notes">
+      <summary><span><i class="fa-solid fa-note-sticky" aria-hidden="true"></i> Notes <em>${annotations.length}</em></span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
+      <div class="route-disclosure-body">
+        ${annotations.length ? `<div class="route-note-list">${annotations.map(annotation => `<button type="button" class="route-note-row" data-open-note="${escapeAttribute(annotation.id)}"><span class="route-note-row-icon" style="--route-color: ${escapeAttribute(window.getRouteColor(context.mode, currentRoute))}"><i class="fa-solid fa-note-sticky" aria-hidden="true"></i></span><span>${escapeHtml(annotation.title || 'Untitled note')}</span><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>`).join('')}</div>` : '<p class="route-disclosure-empty">No notes yet. Add one to mark a useful point on the map.</p>'}
+        <button id="add-note-panel" class="panel-action route-disclosure-action" type="button"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>Add note on map</span></button>
+      </div>
+    </details>
+    <details class="route-disclosure route-customisation">
+      <summary><span><i class="fa-solid fa-palette" aria-hidden="true"></i> Appearance</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
+      <div class="route-disclosure-body">
+        <div class="route-color-control" role="group" aria-label="Route colour">
+          <span class="route-color-label">Route colour</span>
+          <div class="route-color-options">
+            ${ROUTE_COLOR_CHOICES.map(choice => `<button type="button" class="route-color-option${window.getRouteColor(context.mode, currentRoute).toLowerCase() === choice.value ? ' is-selected' : ''}" data-route-color="${choice.value}" aria-label="${choice.label}" aria-pressed="${window.getRouteColor(context.mode, currentRoute).toLowerCase() === choice.value}" title="${choice.label}" style="--route-color: ${choice.value}"></button>`).join('')}
+          </div>
+        </div>
+      </div>
+    </details>
+    <details class="route-more-actions">
       <summary>More actions <i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
       <div class="secondary-actions-row">
+        <button class="secondary-action" id="add-route-panel" type="button"><i class="fa-solid fa-plus" aria-hidden="true"></i> New route</button>
         <button class="secondary-action" id="rename-route-panel" type="button"><i class="fa-solid fa-i-cursor" aria-hidden="true"></i> Rename</button>
         <button class="secondary-action" id="share-route-panel" type="button"><i class="fa-solid fa-link" aria-hidden="true"></i> Share</button>
         <button class="secondary-action" id="export-geojson-panel" type="button"><i class="fa-solid fa-file-code" aria-hidden="true"></i> GeoJSON</button>
@@ -900,8 +912,16 @@ function showActiveRouteDetails(context) {
     return;
   }
 
-  panelContent.querySelector('#add-route-panel').onclick = startRouteDrawing;
-  panelContent.querySelector('#add-note-panel').onclick = startNotePlacement;
+  const addRouteButton = panelContent.querySelector('#add-route-panel');
+  const addNoteButton = panelContent.querySelector('#add-note-panel');
+  if (addRouteButton) addRouteButton.onclick = startRouteDrawing;
+  if (addNoteButton) addNoteButton.onclick = startNotePlacement;
+  panelContent.querySelectorAll('[data-open-note]').forEach(button => {
+    button.onclick = function() {
+      selectedAnnotationId = button.dataset.openNote;
+      showRoutePanelContent();
+    };
+  });
   panelContent.querySelectorAll('[data-route-color]').forEach(button => {
     button.onclick = function() {
       const color = button.dataset.routeColor;
