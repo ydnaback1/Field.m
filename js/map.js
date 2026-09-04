@@ -75,6 +75,8 @@ var mapWorld = L.map('map-world', {
 // Feature groups for routes
 window.routeLayerUK = new L.FeatureGroup().addTo(mapUK);
 window.routeLayerWorld = new L.FeatureGroup().addTo(mapWorld);
+window.routeNotesLayerUK = new L.FeatureGroup().addTo(mapUK);
+window.routeNotesLayerWorld = new L.FeatureGroup().addTo(mapWorld);
 
 // Base layers
 var ukBaseLayers = getUKBaseLayers(serviceUrl, apiKey);
@@ -150,6 +152,9 @@ let routeLibraryFilter = 'all';
 let renamingRoute = false;
 let confirmingDelete = false;
 let routePanelNotice = '';
+let notePlacementMode = false;
+let noteDraft = null;
+let selectedAnnotationId = null;
 const ROUTE_COLOR_CHOICES = [
   { value: '#ff33da', label: 'Magenta' },
   { value: '#3388ff', label: 'Blue' },
@@ -190,6 +195,44 @@ function getActiveRouteContext() {
   if (typeof index !== 'number' || !routes[index] || !routes[index].geojson) return null;
   return { mode, index, route: routes[index] };
 }
+
+function getRouteNotesLayer(mode) {
+  return mode === 'uk' ? window.routeNotesLayerUK : window.routeNotesLayerWorld;
+}
+
+function getAnnotationById(route, id) {
+  return window.getRouteAnnotations(route).find(annotation => annotation && annotation.id === id) || null;
+}
+
+function renderRouteAnnotations(mode, route) {
+  const notesLayer = getRouteNotesLayer(mode);
+  notesLayer.clearLayers();
+  window.getRouteAnnotations(route).forEach(annotation => {
+    if (!Number.isFinite(Number(annotation.lat)) || !Number.isFinite(Number(annotation.lng))) return;
+    const marker = L.marker([annotation.lat, annotation.lng], {
+      icon: L.divIcon({
+        className: 'route-note-marker',
+        html: '<i class="fa-solid fa-note-sticky" aria-hidden="true"></i>',
+        iconSize: [28, 28],
+        iconAnchor: [14, 28]
+      })
+    });
+    const tooltip = document.createElement('span');
+    tooltip.textContent = annotation.title || 'Route note';
+    marker.bindTooltip(tooltip, { direction: 'top', offset: [0, -22] });
+    marker.on('click', function() {
+      selectedAnnotationId = annotation.id;
+      notePlacementMode = false;
+      noteDraft = null;
+      panelView = 'details';
+      setRoutePanelOpen(true);
+      showRoutePanelContent();
+    });
+    notesLayer.addLayer(marker);
+  });
+}
+
+window.renderRouteAnnotations = renderRouteAnnotations;
 
 function getRouteTimestamp(route, index) {
   const timestamp = Date.parse(route.updatedAt || route.createdAt || '');
@@ -344,6 +387,9 @@ function openRouteFromLibrary(mode, index) {
   editingMode = false;
   renamingRoute = false;
   confirmingDelete = false;
+  notePlacementMode = false;
+  noteDraft = null;
+  selectedAnnotationId = null;
   routePanelNotice = '';
   setRoutePanelOpen(true);
   updateRouteFabLabel();
@@ -429,6 +475,129 @@ function startRouteDrawing() {
   if (drawControl && drawControl._toolbars && drawControl._toolbars.draw) {
     drawControl._toolbars.draw._modes.polyline.handler.enable();
   }
+}
+
+function startNotePlacement() {
+  notePlacementMode = true;
+  noteDraft = null;
+  selectedAnnotationId = null;
+  routePanelNotice = '';
+  showRoutePanelContent();
+}
+
+function showNotePlacement(context) {
+  panel.classList.remove('library-view');
+  panel.classList.remove('library-scroll-view');
+  panel.setAttribute('aria-label', 'Place route note');
+  panelContent.className = 'route-detail-content';
+  panelContent.innerHTML = `
+    <div class="panel-heading workflow-heading">
+      <div class="panel-eyebrow">${getModeLabel(context.mode)} route</div>
+      <h2 class="route-title">Place a note</h2>
+      <p class="panel-hint">Tap the map where you want to remember something.</p>
+    </div>
+    <div class="workflow-tip"><span>1</span>Choose a point on the map</div>
+    <div class="route-actions-row">
+      <button id="cancel-note-placement" class="panel-action" type="button">Cancel</button>
+    </div>`;
+  panelContent.querySelector('#cancel-note-placement').onclick = function() {
+    notePlacementMode = false;
+    showRoutePanelContent();
+  };
+}
+
+function showNoteForm(context) {
+  const isEditing = Boolean(noteDraft.id);
+  panel.classList.remove('library-view');
+  panel.classList.remove('library-scroll-view');
+  panel.setAttribute('aria-label', isEditing ? 'Edit route note' : 'Add route note');
+  panelContent.className = 'route-detail-content';
+  panelContent.innerHTML = `
+    <div class="panel-navigation">
+      <button id="cancel-note-form" class="panel-back" type="button"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Cancel</button>
+      <span class="route-mode-badge">${getModeLabel(context.mode)} map</span>
+    </div>
+    <form id="route-note-form" class="route-note-form">
+      <div class="panel-heading workflow-heading">
+        <div class="panel-eyebrow">Route note</div>
+        <h2 class="route-title">${isEditing ? 'Edit note' : 'Add note'}</h2>
+      </div>
+      <label for="route-note-title">Title</label>
+      <input id="route-note-title" name="title" maxlength="60" required value="${escapeAttribute(noteDraft.title || '')}">
+      <label for="route-note-text">Note <span>Optional</span></label>
+      <textarea id="route-note-text" name="note" maxlength="280" rows="4">${escapeHtml(noteDraft.note || '')}</textarea>
+      <div class="route-actions-row">
+        <button class="primary-action" type="submit">Save note</button>
+        <button id="cancel-note-form-action" class="panel-action" type="button">Cancel</button>
+      </div>
+    </form>`;
+
+  const cancel = function() {
+    noteDraft = null;
+    selectedAnnotationId = null;
+    showRoutePanelContent();
+  };
+  panelContent.querySelector('#cancel-note-form').onclick = cancel;
+  panelContent.querySelector('#cancel-note-form-action').onclick = cancel;
+  panelContent.querySelector('#route-note-form').onsubmit = function(event) {
+    event.preventDefault();
+    const title = panelContent.querySelector('#route-note-title').value.trim();
+    const note = panelContent.querySelector('#route-note-text').value.trim();
+    if (!title) return;
+    const annotation = {
+      id: noteDraft.id || (window.crypto && crypto.randomUUID ? crypto.randomUUID() : `note-${Date.now()}-${Math.random().toString(36).slice(2)}`),
+      lat: noteDraft.lat,
+      lng: noteDraft.lng,
+      title,
+      note
+    };
+    if (!window.saveRouteAnnotation(context.mode, context.index, annotation)) return;
+    selectedAnnotationId = annotation.id;
+    noteDraft = null;
+    const updatedRoute = window.getRouteList(context.mode)[context.index];
+    renderRouteAnnotations(context.mode, updatedRoute);
+    routePanelNotice = 'Note saved.';
+    showRoutePanelContent();
+  };
+  window.requestAnimationFrame(() => panelContent.querySelector('#route-note-title').focus({ preventScroll: true }));
+}
+
+function showNoteDetails(context, annotation) {
+  panel.classList.remove('library-view');
+  panel.classList.remove('library-scroll-view');
+  panel.setAttribute('aria-label', 'Route note');
+  panelContent.className = 'route-detail-content';
+  panelContent.innerHTML = `
+    <div class="panel-navigation">
+      <button id="back-to-route-details" class="panel-back" type="button"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Route details</button>
+      <span class="route-mode-badge">Note</span>
+    </div>
+    <div class="panel-heading active-route-heading">
+      <div class="panel-eyebrow"><i class="fa-solid fa-note-sticky" aria-hidden="true"></i> On route</div>
+      <h2 class="route-title">${escapeHtml(annotation.title)}</h2>
+      ${annotation.note ? `<p class="route-note-copy">${escapeHtml(annotation.note).replace(/\n/g, '<br>')}</p>` : '<p class="panel-hint">No additional note.</p>'}
+    </div>
+    <div class="route-actions-row active-route-actions">
+      <button id="edit-note-panel" class="primary-action" type="button"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit note</span></button>
+      <button id="delete-note-panel" class="panel-action danger-action" type="button"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>Delete</span></button>
+    </div>`;
+  panelContent.querySelector('#back-to-route-details').onclick = function() {
+    selectedAnnotationId = null;
+    showRoutePanelContent();
+  };
+  panelContent.querySelector('#edit-note-panel').onclick = function() {
+    noteDraft = { ...annotation };
+    selectedAnnotationId = null;
+    showRoutePanelContent();
+  };
+  panelContent.querySelector('#delete-note-panel').onclick = function() {
+    if (!window.deleteRouteAnnotation(context.mode, context.index, annotation.id)) return;
+    selectedAnnotationId = null;
+    const updatedRoute = window.getRouteList(context.mode)[context.index];
+    renderRouteAnnotations(context.mode, updatedRoute);
+    routePanelNotice = 'Note deleted.';
+    showRoutePanelContent();
+  };
 }
 
 function showRouteLibrary() {
@@ -595,6 +764,11 @@ function bindRouteShareAndExport(currentRoute) {
 
 function showActiveRouteDetails(context) {
   const currentRoute = context.route;
+  const selectedAnnotation = selectedAnnotationId && getAnnotationById(currentRoute, selectedAnnotationId);
+  if (selectedAnnotation) {
+    showNoteDetails(context, selectedAnnotation);
+    return;
+  }
   const { km, mi, timeStr } = getRouteMetrics(currentRoute.geojson);
   const date = formatRouteDate(currentRoute);
   panel.classList.remove('library-view');
@@ -631,6 +805,7 @@ function showActiveRouteDetails(context) {
     ${routePanelNotice ? `<div class="panel-notice" role="status">${escapeHtml(routePanelNotice)}</div>` : ''}
     <div class="route-actions-row active-route-actions">
       <button id="edit-route-panel" class="primary-action" type="button"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit route</span></button>
+      <button id="add-note-panel" class="panel-action" type="button"><i class="fa-solid fa-note-sticky" aria-hidden="true"></i><span>Add note</span></button>
       <button id="add-route-panel" class="panel-action" type="button"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>New route</span></button>
     </div>
     ${confirmingDelete ? `<div class="route-delete-confirm" role="alert">
@@ -685,6 +860,7 @@ function showActiveRouteDetails(context) {
   }
 
   panelContent.querySelector('#add-route-panel').onclick = startRouteDrawing;
+  panelContent.querySelector('#add-note-panel').onclick = startNotePlacement;
   panelContent.querySelectorAll('[data-route-color]').forEach(button => {
     button.onclick = function() {
       const color = button.dataset.routeColor;
@@ -712,8 +888,13 @@ function showActiveRouteDetails(context) {
     };
     panelContent.querySelector('#confirm-delete-route').onclick = function() {
       window.deleteRouteFromList(context.mode, context.index);
-      if (context.mode === 'uk') window.routeLayerUK.clearLayers();
-      else window.routeLayerWorld.clearLayers();
+      if (context.mode === 'uk') {
+        window.routeLayerUK.clearLayers();
+        window.routeNotesLayerUK.clearLayers();
+      } else {
+        window.routeLayerWorld.clearLayers();
+        window.routeNotesLayerWorld.clearLayers();
+      }
       window.currentRouteIndex[context.mode] = null;
       confirmingDelete = false;
       panelView = 'library';
@@ -743,12 +924,20 @@ function updateRouteFabLabel() {
 }
 
 function showRoutePanelContent() {
-  panel.classList.toggle('route-workflow-view', drawingMode || editingMode);
+  panel.classList.toggle('route-workflow-view', drawingMode || editingMode || notePlacementMode);
   if (drawingMode || editingMode) {
     showRouteWorkflow();
     return;
   }
   const context = getActiveRouteContext();
+  if (notePlacementMode && context) {
+    showNotePlacement(context);
+    return;
+  }
+  if (noteDraft && context) {
+    showNoteForm(context);
+    return;
+  }
   if (panelView === 'details' && context) {
     showActiveRouteDetails(context);
   } else {
@@ -835,6 +1024,7 @@ mapUK.on(L.Draw.Event.CREATED, function (e) {
   if (e.layerType === 'polyline') {
     const defaultName = getDefaultRouteName('uk');
     window.routeLayerUK.clearLayers();
+    window.routeNotesLayerUK.clearLayers();
     window.currentRouteIndex.uk = window.saveRouteToList('uk', defaultName, e.layer);
     window.applyRouteStyle(e.layer, 'uk', window.getRouteList('uk')[window.currentRouteIndex.uk]);
     window.routeLayerUK.addLayer(e.layer);
@@ -860,6 +1050,7 @@ mapWorld.on(L.Draw.Event.CREATED, function (e) {
   if (e.layerType === 'polyline') {
     const defaultName = getDefaultRouteName('world');
     window.routeLayerWorld.clearLayers();
+    window.routeNotesLayerWorld.clearLayers();
     window.currentRouteIndex.world = window.saveRouteToList('world', defaultName, e.layer);
     window.applyRouteStyle(e.layer, 'world', window.getRouteList('world')[window.currentRouteIndex.world]);
     window.routeLayerWorld.addLayer(e.layer);
@@ -907,6 +1098,18 @@ mapWorld.on(L.Draw.Event.EDITED, function (e) {
   showRoutePanelContent();
   updateRouteFabLabel();
 });
+
+function handleNotePlacement(mode, event) {
+  if (!notePlacementMode || (window.currentMode || 'uk') !== mode) return;
+  const context = getActiveRouteContext();
+  if (!context || context.mode !== mode) return;
+  notePlacementMode = false;
+  noteDraft = { lat: event.latlng.lat, lng: event.latlng.lng, title: '', note: '' };
+  showRoutePanelContent();
+}
+
+mapUK.on('click', function(event) { handleNotePlacement('uk', event); });
+mapWorld.on('click', function(event) { handleNotePlacement('world', event); });
 
 // Save map state for persistence
 function saveMapState() {

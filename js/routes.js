@@ -74,6 +74,46 @@ function updateRouteColorInList(mode, idx, color) {
     return false;
 }
 
+function getRouteAnnotations(route) {
+    return Array.isArray(route && route.annotations) ? route.annotations : [];
+}
+
+function updateRouteAnnotationsInList(mode, idx, annotations) {
+    let arr = getRouteList(mode);
+    if (arr[idx]) {
+        arr[idx].annotations = annotations;
+        arr[idx].updatedAt = new Date().toISOString();
+        localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
+        return true;
+    }
+    return false;
+}
+
+function saveRouteAnnotation(mode, idx, annotation) {
+    const route = getRouteList(mode)[idx];
+    if (!route) return false;
+    const annotations = getRouteAnnotations(route).slice();
+    const next = {
+        id: String(annotation.id),
+        lat: Number(annotation.lat),
+        lng: Number(annotation.lng),
+        title: String(annotation.title || ''),
+        note: String(annotation.note || '')
+    };
+    if (!Number.isFinite(next.lat) || !Number.isFinite(next.lng) || !next.title) return false;
+    const existingIndex = annotations.findIndex(item => item && item.id === next.id);
+    if (existingIndex === -1) annotations.push(next);
+    else annotations[existingIndex] = next;
+    return updateRouteAnnotationsInList(mode, idx, annotations);
+}
+
+function deleteRouteAnnotation(mode, idx, annotationId) {
+    const route = getRouteList(mode)[idx];
+    if (!route) return false;
+    const annotations = getRouteAnnotations(route).filter(item => item && item.id !== annotationId);
+    return updateRouteAnnotationsInList(mode, idx, annotations);
+}
+
 function deleteRouteFromList(mode, index) {
     let arr = getRouteList(mode);
     if (!arr[index]) return false;
@@ -117,6 +157,7 @@ function loadRouteByIndex(mode, idx) {
         if (layer.getBounds().isValid()) mapWorld.fitBounds(layer.getBounds(), padding);
         window.currentRouteIndex.world = Number(idx);
     }
+    if (typeof window.renderRouteAnnotations === 'function') window.renderRouteAnnotations(mode, route);
     return true;
 }
 
@@ -125,6 +166,9 @@ window.saveRouteToList = saveRouteToList;
 window.updateRouteInList = updateRouteInList;
 window.renameRouteInList = renameRouteInList;
 window.updateRouteColorInList = updateRouteColorInList;
+window.getRouteAnnotations = getRouteAnnotations;
+window.saveRouteAnnotation = saveRouteAnnotation;
+window.deleteRouteAnnotation = deleteRouteAnnotation;
 window.deleteRouteFromList = deleteRouteFromList;
 window.updateRouteListUI = updateRouteListUI;
 window.loadRouteByIndex = loadRouteByIndex;
