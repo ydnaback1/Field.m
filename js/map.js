@@ -158,6 +158,8 @@ let routeLibraryFilter = 'all';
 let renamingRoute = false;
 let confirmingDelete = false;
 let routePanelNotice = '';
+let elevationRequesting = null;
+let elevationDisclosureOpen = false;
 let notePlacementMode = false;
 let noteDraft = null;
 let selectedAnnotationId = null;
@@ -297,6 +299,12 @@ function getRouteMetrics(geojson) {
     timeStr = `${totalMin}m`;
   }
   return { km, mi, timeStr };
+}
+
+function getRouteElevationSummary(route) {
+  const summary = route?.elevation?.summary;
+  if (!summary || !['ascent', 'descent', 'min', 'max'].every(key => Number.isFinite(summary[key]))) return null;
+  return summary;
 }
 
 function getShareableRouteName(route) {
@@ -1090,6 +1098,8 @@ function bindRouteShareAndExport(currentRoute) {
 
 function showActiveRouteDetails(context) {
   const currentRoute = context.route;
+  const elevationSummary = getRouteElevationSummary(currentRoute);
+  const isElevationRequesting = elevationRequesting === `${context.mode}:${context.index}`;
   const annotations = window.getRouteAnnotations(currentRoute);
   const selectedAnnotation = selectedAnnotationId && getAnnotationById(currentRoute, selectedAnnotationId);
   if (selectedAnnotation) {
@@ -1138,6 +1148,19 @@ function showActiveRouteDetails(context) {
       <div class="route-disclosure-body">
         ${annotations.length ? `<div class="route-note-list">${annotations.map(annotation => `<button type="button" class="route-note-row" data-open-note="${escapeAttribute(annotation.id)}"><span class="route-note-row-icon" style="--route-color: ${escapeAttribute(window.getRouteColor(context.mode, currentRoute))}"><i class="fa-solid fa-note-sticky" aria-hidden="true"></i></span><span>${escapeHtml(annotation.title || 'Untitled note')}</span><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>`).join('')}</div>` : '<p class="route-disclosure-empty">No notes yet. Add one to mark a useful point on the map.</p>'}
         <button id="add-note-panel" class="panel-action route-disclosure-action" type="button"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>Add note on map</span></button>
+      </div>
+    </details>
+    <details class="route-disclosure route-elevation"${elevationDisclosureOpen || isElevationRequesting ? ' open' : ''}>
+      <summary><span><i class="fa-solid fa-mountain" aria-hidden="true"></i> Elevation</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
+      <div class="route-disclosure-body">
+        ${elevationSummary ? `<div class="elevation-stats" aria-label="Elevation statistics">
+          <span><small>Ascent</small><strong>${elevationSummary.ascent} m</strong></span>
+          <span><small>Descent</small><strong>${elevationSummary.descent} m</strong></span>
+          <span><small>Minimum</small><strong>${elevationSummary.min} m</strong></span>
+          <span><small>Maximum</small><strong>${elevationSummary.max} m</strong></span>
+        </div>
+        <button id="refresh-elevation-panel" class="panel-action route-disclosure-action" type="button"><i class="fa-solid fa-rotate" aria-hidden="true"></i><span>Refresh elevation</span></button>` : `<p class="route-disclosure-empty">${isElevationRequesting ? 'Getting elevation…' : 'Get route ascent, descent, and elevation range.'}</p>
+        <button id="get-elevation-panel" class="panel-action route-disclosure-action" type="button"${isElevationRequesting ? ' disabled' : ''}><i class="fa-solid fa-mountain" aria-hidden="true"></i><span>${isElevationRequesting ? 'Getting elevation…' : 'Get elevation'}</span></button>`}
       </div>
     </details>
     <details class="route-disclosure route-customisation">
@@ -1200,8 +1223,27 @@ function showActiveRouteDetails(context) {
 
   const addRouteButton = panelContent.querySelector('#add-route-panel');
   const addNoteButton = panelContent.querySelector('#add-note-panel');
+  const elevationDisclosure = panelContent.querySelector('.route-elevation');
   if (addRouteButton) addRouteButton.onclick = startRouteDrawing;
   if (addNoteButton) addNoteButton.onclick = startNotePlacement;
+  if (elevationDisclosure) elevationDisclosure.ontoggle = function() { elevationDisclosureOpen = elevationDisclosure.open; };
+  const elevationButton = panelContent.querySelector('#get-elevation-panel, #refresh-elevation-panel');
+  if (elevationButton) elevationButton.onclick = async function() {
+    const requestKey = `${context.mode}:${context.index}`;
+    if (elevationRequesting) return;
+    elevationRequesting = requestKey;
+    elevationDisclosureOpen = true;
+    routePanelNotice = '';
+    showRoutePanelContent();
+    try {
+      await window.fetchRouteElevation(context.mode, context.index);
+    } catch (error) {
+      routePanelNotice = 'Could not get elevation. Your route is unchanged; please try again.';
+    } finally {
+      if (elevationRequesting === requestKey) elevationRequesting = null;
+      showRoutePanelContent();
+    }
+  };
   panelContent.querySelectorAll('[data-open-note]').forEach(button => {
     button.onclick = function() {
       selectedAnnotationId = button.dataset.openNote;
