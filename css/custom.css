@@ -905,6 +905,78 @@ select {
   font-size: 0.9rem;
 }
 
+.elevation-profile {
+  min-width: 0;
+  padding: 8px 8px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-hover) 64%, transparent);
+  outline: none;
+  touch-action: none;
+}
+
+.elevation-profile:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.elevation-profile-chart {
+  display: block;
+  width: 100%;
+  height: clamp(132px, 20vh, 180px);
+  overflow: visible;
+}
+
+.elevation-profile-grid {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+}
+
+.elevation-profile-area {
+  /* Keep a theme-token fallback where color-mix is unavailable in SVG. */
+  fill: var(--accent-soft);
+  fill: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.elevation-profile-line {
+  fill: none;
+  stroke: var(--accent-strong);
+  stroke-width: 4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.elevation-profile-cursor {
+  stroke: var(--panel-text);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+  opacity: 0;
+}
+
+.elevation-profile-point {
+  fill: var(--accent-strong);
+  stroke: var(--panel-bg);
+  stroke-width: 3;
+  opacity: 0;
+}
+
+.elevation-profile-cursor.is-visible,
+.elevation-profile-point.is-visible { opacity: 1; }
+
+.elevation-profile-y-label,
+.elevation-profile-x-label {
+  fill: var(--muted-text);
+  font: 600 22px/1 Inter, ui-sans-serif, sans-serif;
+}
+
+.elevation-profile-readout {
+  min-height: 1.25em;
+  margin: 2px 0 0 46px;
+  color: var(--panel-text);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .route-note-list {
   display: grid;
   gap: 6px;
@@ -1454,6 +1526,8 @@ select {
   .route-disclosure summary,
   .route-more-actions summary { min-height: 40px; }
 
+  .elevation-profile-chart { height: clamp(124px, 18vh, 160px); }
+
   .route-actions-row > * {
     flex: 1 1 auto;
   }
@@ -1548,6 +1622,12 @@ select {
     --shadow-strong: 0 16px 40px rgba(0, 0, 0, 0.56);
     --icon-color: #f4f5f7;
   }
+
+  .elevation-profile-area {
+    fill: color-mix(in srgb, var(--accent) 28%, var(--panel-bg));
+  }
+
+  .elevation-profile-line { stroke: var(--accent); }
 
   .globe-btn.active {
     background: var(--accent-soft);
