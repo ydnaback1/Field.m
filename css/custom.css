@@ -263,6 +263,11 @@ select {
   font-size: 1rem;
 }
 
+#panel-content .metric-ascent-indicator {
+  color: var(--muted-text);
+  font-size: 0.78rem;
+}
+
 .metric-secondary {
   margin-left: 3px;
   color: var(--muted-text);
@@ -903,6 +908,16 @@ select {
 
 .elevation-stats strong {
   font-size: 0.9rem;
+}
+
+.elevation-walking-time {
+  margin: 0;
+  color: var(--muted-text);
+  font-size: 0.84rem;
+}
+
+.elevation-walking-time strong {
+  color: var(--panel-text);
 }
 
 .elevation-profile {
