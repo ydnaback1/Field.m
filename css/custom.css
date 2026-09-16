@@ -511,6 +511,52 @@ select {
   padding-top: 12px;
 }
 
+.route-backup-content {
+  padding-bottom: 26px;
+}
+
+.route-backup-section {
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--surface-hover);
+}
+
+.route-backup-section h3 {
+  margin: 0;
+  color: var(--panel-text);
+  font-size: 0.96rem;
+}
+
+.route-backup-section p,
+.route-backup-preview span,
+.route-backup-notice {
+  margin: 6px 0 12px;
+  color: var(--muted-text);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.route-backup-preview {
+  display: grid;
+  gap: 3px;
+  margin-top: 12px;
+  padding: 10px 11px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.86rem;
+}
+
+.route-backup-preview span { margin: 0; }
+
+.route-backup-actions { margin-top: 10px; }
+
+.route-backup-notice {
+  margin: -3px 2px 0;
+}
+
 .route-library-empty {
   margin: 0;
 }
@@ -1090,9 +1136,9 @@ select {
 }
 
 /* --- Floating Action Button --- */
-#fab-route {
+#fab-route,
+#fab-route-backup {
   position: fixed;
-  bottom: calc(18px + env(safe-area-inset-bottom));
   right: calc(18px + env(safe-area-inset-right));
   width: 58px;
   height: 58px;
@@ -1110,7 +1156,18 @@ select {
   transition: opacity 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
-#fab-route.panel-open {
+#fab-route { bottom: calc(18px + env(safe-area-inset-bottom)); }
+
+#fab-route-backup {
+  bottom: calc(86px + env(safe-area-inset-bottom));
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  font-size: 1rem;
+}
+
+#fab-route.panel-open,
+#fab-route-backup.panel-open {
   opacity: 0;
   pointer-events: none;
   transform: translateY(10px) scale(0.92);
@@ -1447,7 +1504,8 @@ select {
     background: var(--surface-hover);
   }
 
-  #fab-route:hover {
+  #fab-route:hover,
+  #fab-route-backup:hover {
     background: var(--surface-dark-strong);
     transform: translateY(-2px);
     box-shadow: var(--shadow-strong);
@@ -1460,6 +1518,7 @@ select {
 .leaflet-measure-toggle:active,
 .globe-btn:active,
 #fab-route:active,
+#fab-route-backup:active,
 #panel-close:active,
 #panel-content button:active {
   transform: scale(0.96);
@@ -1472,6 +1531,7 @@ select {
 .leaflet-control-measure a.start:focus-visible,
 .globe-btn:focus-visible,
 #fab-route:focus-visible,
+#fab-route-backup:focus-visible,
 #panel-close:focus-visible,
 #panel-content button:focus-visible,
 #panel-content select:focus-visible,

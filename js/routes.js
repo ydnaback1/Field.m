@@ -14,6 +14,113 @@ const DEFAULT_ROUTE_COLORS = {
     world: '#3388ff'
 };
 
+const ROUTE_BACKUP_TYPE = 'field-maps-route-backup';
+const ROUTE_BACKUP_VERSION = 1;
+const ROUTE_BACKUP_MAX_BYTES = 5 * 1024 * 1024;
+const ROUTE_BACKUP_MAX_ROUTES_PER_MAP = 1000;
+const ROUTE_BACKUP_FIELDS = [
+    'name', 'geojson', 'color', 'annotations', 'routing', 'elevation',
+    'elevationData', 'cachedElevation', 'createdAt', 'updatedAt'
+];
+
+function isPlainRouteObject(value) {
+    return value !== null && typeof value === 'object' && !Array.isArray(value) &&
+        (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+}
+
+function copySupportedRouteRecord(route) {
+    const copy = {};
+    ROUTE_BACKUP_FIELDS.forEach(field => {
+        if (Object.prototype.hasOwnProperty.call(route, field)) copy[field] = route[field];
+    });
+    return copy;
+}
+
+function isRouteGeoJson(value) {
+    return isPlainRouteObject(value) &&
+        (value.type === 'Feature' || value.type === 'FeatureCollection' || value.type === 'LineString' || value.type === 'MultiLineString');
+}
+
+function validateBackupRoute(route) {
+    if (!isPlainRouteObject(route) || !isRouteGeoJson(route.geojson)) return false;
+    if (route.name !== undefined && typeof route.name !== 'string') return false;
+    if (route.color !== undefined && typeof route.color !== 'string') return false;
+    return true;
+}
+
+function exportRouteBackup() {
+    const routes = {};
+    ['uk', 'world'].forEach(mode => {
+        routes[mode] = getRouteList(mode)
+            .filter(validateBackupRoute)
+            .map(copySupportedRouteRecord);
+    });
+    return {
+        type: ROUTE_BACKUP_TYPE,
+        version: ROUTE_BACKUP_VERSION,
+        exportedAt: new Date().toISOString(),
+        routes
+    };
+}
+
+function validateRouteBackup(backup) {
+    if (!isPlainRouteObject(backup) || backup.type !== ROUTE_BACKUP_TYPE || backup.version !== ROUTE_BACKUP_VERSION || !isPlainRouteObject(backup.routes)) {
+        return { valid: false, error: 'This is not a Field Maps route backup.' };
+    }
+    const { uk, world } = backup.routes;
+    if (!Array.isArray(uk) || !Array.isArray(world)) {
+        return { valid: false, error: 'The backup must contain UK and Worldwide route lists.' };
+    }
+    if (uk.length > ROUTE_BACKUP_MAX_ROUTES_PER_MAP || world.length > ROUTE_BACKUP_MAX_ROUTES_PER_MAP) {
+        return { valid: false, error: 'This backup contains too many routes.' };
+    }
+    if (![...uk, ...world].every(validateBackupRoute)) {
+        return { valid: false, error: 'One or more routes in this backup are invalid.' };
+    }
+    return {
+        valid: true,
+        backup: {
+            type: ROUTE_BACKUP_TYPE,
+            version: ROUTE_BACKUP_VERSION,
+            exportedAt: typeof backup.exportedAt === 'string' ? backup.exportedAt : undefined,
+            routes: {
+                uk: uk.map(copySupportedRouteRecord),
+                world: world.map(copySupportedRouteRecord)
+            }
+        }
+    };
+}
+
+function saveImportedRouteLists(nextLists) {
+    const previous = { uk: localStorage.getItem('routeList_uk'), world: localStorage.getItem('routeList_world') };
+    const serialized = { uk: JSON.stringify(nextLists.uk), world: JSON.stringify(nextLists.world) };
+    try {
+        localStorage.setItem('routeList_uk', serialized.uk);
+        localStorage.setItem('routeList_world', serialized.world);
+        return { valid: true };
+    } catch (error) {
+        try {
+            ['uk', 'world'].forEach(mode => {
+                if (previous[mode] === null) localStorage.removeItem(`routeList_${mode}`);
+                else localStorage.setItem(`routeList_${mode}`, previous[mode]);
+            });
+        } catch (restoreError) {}
+        return { valid: false, error: 'There was not enough local storage space to import this backup.' };
+    }
+}
+
+function applyRouteBackup(backup, strategy) {
+    const result = validateRouteBackup(backup);
+    if (!result.valid) return result;
+    if (strategy !== 'merge' && strategy !== 'replace') return { valid: false, error: 'Choose how to import this backup.' };
+    const current = { uk: getRouteList('uk'), world: getRouteList('world') };
+    const nextLists = strategy === 'replace' ? result.backup.routes : {
+        uk: current.uk.concat(result.backup.routes.uk),
+        world: current.world.concat(result.backup.routes.world)
+    };
+    return saveImportedRouteLists(nextLists);
+}
+
 function getRouteColor(mode, route) {
     return route && typeof route.color === 'string' && route.color ? route.color : DEFAULT_ROUTE_COLORS[mode];
 }
@@ -324,3 +431,7 @@ window.loadRouteByIndex = loadRouteByIndex;
 window.getRouteColor = getRouteColor;
 window.getRouteStyle = getRouteStyle;
 window.applyRouteStyle = applyRouteStyle;
+window.ROUTE_BACKUP_MAX_BYTES = ROUTE_BACKUP_MAX_BYTES;
+window.exportRouteBackup = exportRouteBackup;
+window.validateRouteBackup = validateRouteBackup;
+window.applyRouteBackup = applyRouteBackup;
