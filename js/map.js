@@ -149,6 +149,8 @@ let drawingMode = false;
 let editingMode = false;
 let routeCreationMode = 'free';
 let pathDraft = null;
+let snapPreview = null;
+let sharedRouteImport = null;
 let panelView = 'library';
 let routeLibraryQuery = '';
 let routeLibrarySort = 'recent';
@@ -309,11 +311,83 @@ function getShareableRouteName(route) {
   return route && route.name ? route.name : 'Shared Route';
 }
 
-function encodeRoutePayload(route) {
-  const payload = {
-    name: getShareableRouteName(route),
-    geojson: route.geojson
+function getRouteLineCoordinates(geojson) {
+  const feature = geojson && geojson.type === 'FeatureCollection' ? geojson.features.find(item => item && item.geometry && item.geometry.type === 'LineString') : geojson;
+  const geometry = feature && feature.type === 'Feature' ? feature.geometry : feature;
+  return geometry && geometry.type === 'LineString' && Array.isArray(geometry.coordinates) ? geometry.coordinates.filter(point => Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1])) : [];
+}
+
+function lineCoordinatesToGeojson(coordinates) {
+  return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } }] };
+}
+
+function encodePolyline(coordinates) {
+  let previousLat = 0, previousLng = 0, encoded = '';
+  const encodeValue = value => {
+    let current = value < 0 ? ~(value << 1) : value << 1;
+    while (current >= 0x20) { encoded += String.fromCharCode((0x20 | (current & 0x1f)) + 63); current >>= 5; }
+    encoded += String.fromCharCode(current + 63);
   };
+  coordinates.forEach(point => {
+    const lat = Math.round(point[1] * 1e5), lng = Math.round(point[0] * 1e5);
+    encodeValue(lat - previousLat); encodeValue(lng - previousLng);
+    previousLat = lat; previousLng = lng;
+  });
+  return encoded;
+}
+
+function decodePolyline(encoded) {
+  let index = 0, lat = 0, lng = 0; const coordinates = [];
+  const decodeValue = () => {
+    let result = 0, shift = 0, byte;
+    do { if (index >= encoded.length) throw new Error('Invalid route geometry'); byte = encoded.charCodeAt(index++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
+    return result & 1 ? ~(result >> 1) : result >> 1;
+  };
+  while (index < encoded.length) { lat += decodeValue(); lng += decodeValue(); coordinates.push([lng / 1e5, lat / 1e5]); }
+  return coordinates;
+}
+
+function pointSegmentDistanceMeters(point, start, end) {
+  const latitude = (point[1] + start[1] + end[1]) / 3 * Math.PI / 180;
+  const scaleX = 111320 * Math.cos(latitude), scaleY = 110540;
+  const px = point[0] * scaleX, py = point[1] * scaleY, ax = start[0] * scaleX, ay = start[1] * scaleY, bx = end[0] * scaleX, by = end[1] * scaleY;
+  const dx = bx - ax, dy = by - ay;
+  const ratio = dx || dy ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy))) : 0;
+  return Math.hypot(px - (ax + ratio * dx), py - (ay + ratio * dy));
+}
+
+function simplifyRouteCoordinates(coordinates, toleranceMeters) {
+  if (coordinates.length < 3) return coordinates.slice();
+  const keep = new Uint8Array(coordinates.length); keep[0] = keep[coordinates.length - 1] = 1;
+  const simplify = (first, last) => {
+    let largest = toleranceMeters, largestIndex = -1;
+    for (let i = first + 1; i < last; i++) { const distance = pointSegmentDistanceMeters(coordinates[i], coordinates[first], coordinates[last]); if (distance > largest) { largest = distance; largestIndex = i; } }
+    if (largestIndex !== -1) { keep[largestIndex] = 1; simplify(first, largestIndex); simplify(largestIndex, last); }
+  };
+  simplify(0, coordinates.length - 1);
+  return coordinates.filter((_, index) => keep[index]);
+}
+
+function getRoutingWaypoints(geojson) {
+  const coordinates = getRouteLineCoordinates(geojson);
+  if (coordinates.length < 2) return [];
+  let tolerance = 12, simplified = simplifyRouteCoordinates(coordinates, tolerance);
+  while (simplified.length > 40 && tolerance < 10000) { tolerance *= 1.8; simplified = simplifyRouteCoordinates(coordinates, tolerance); }
+  if (simplified.length > 40) simplified = Array.from({ length: 40 }, (_, index) => coordinates[Math.round(index * (coordinates.length - 1) / 39)]);
+  return simplified.map(point => [point[0], point[1]]);
+}
+
+function shareRouteMetadata(route) {
+  const annotations = window.getRouteAnnotations(route).map(item => ({ id: item.id, lat: Number(item.lat), lng: Number(item.lng), title: item.title || '', note: item.note || '' })).filter(item => Number.isFinite(item.lat) && Number.isFinite(item.lng));
+  return { n: getShareableRouteName(route), c: route.color, a: annotations };
+}
+
+function encodeRoutePayload(route) {
+  const metadata = shareRouteMetadata(route);
+  const routing = route && route.routing;
+  const payload = routing && routing.provider === 'ors' && routing.profile === 'foot-hiking' && Array.isArray(routing.waypoints) && routing.waypoints.length >= 2
+    ? { v: 2, t: 'ors', ...metadata, p: routing.profile, w: routing.waypoints }
+    : { v: 2, t: 'free', ...metadata, g: encodePolyline(simplifyRouteCoordinates(getRouteLineCoordinates(route.geojson), 5)) };
   const json = JSON.stringify(payload);
   return btoa(unescape(encodeURIComponent(json)));
 }
@@ -328,7 +402,17 @@ function getSharedRouteFromUrl() {
   const routeParam = url.searchParams.get('route');
   if (!routeParam) return null;
   try {
-    return decodeRoutePayload(routeParam);
+    const payload = decodeRoutePayload(routeParam);
+    if (payload && payload.v === 2) {
+      if (payload.t === 'free') {
+        const coordinates = decodePolyline(String(payload.g || ''));
+        if (coordinates.length < 2) return null;
+        return { name: payload.n, color: payload.c, annotations: Array.isArray(payload.a) ? payload.a : [], geojson: lineCoordinatesToGeojson(coordinates) };
+      }
+      if (payload.t === 'ors' && payload.p === 'foot-hiking' && Array.isArray(payload.w) && payload.w.length >= 2 && payload.w.every(point => Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1]))) return { name: payload.n, color: payload.c, annotations: Array.isArray(payload.a) ? payload.a : [], routing: { provider: 'ors', profile: 'foot-hiking', waypoints: payload.w } };
+      return null;
+    }
+    return payload; // Legacy payloads stored full GeoJSON.
   } catch (e) {
     return null;
   }
@@ -574,27 +658,93 @@ async function requestPathRoute() {
   pathDraft.error = '';
   showRoutePanelContent();
   try {
-    const response = await fetch('https://api.heigit.org/openrouteservice/v2/directions/foot-hiking/geojson', {
-      method: 'POST',
-      headers: { Authorization: CONFIG.orsApiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ coordinates: pathDraft.waypoints })
-    });
-    if (!response.ok) throw new Error('Routing request failed');
-    const geojson = await response.json();
-    if (!geojson || !geojson.features || !geojson.features.length) throw new Error('No route returned');
+    const geojson = await requestOrsFootHikingRoute(pathDraft.waypoints);
     if (!pathDraft || requestId !== pathDraft.requestId) return;
     pathDraft.geojson = geojson;
     pathDraft.error = '';
     renderPathDraft();
   } catch (error) {
     if (!pathDraft || requestId !== pathDraft.requestId) return;
-    pathDraft.error = 'Could not follow paths. Your waypoints are still available; try again or add another point.';
+    pathDraft.error = pathDraft.kind === 'snap' ? 'Could not convert this route to walking paths. Your original route is unchanged; try again later.' : 'Could not follow paths. Your waypoints are still available; try again or add another point.';
   } finally {
     if (pathDraft && requestId === pathDraft.requestId) {
       pathDraft.waiting = false;
       showRoutePanelContent();
     }
   }
+}
+
+async function requestOrsFootHikingRoute(waypoints) {
+  if (!CONFIG.orsApiKey) throw new Error('Path routing is unavailable because the ORS key is missing.');
+  const response = await fetch('https://api.heigit.org/openrouteservice/v2/directions/foot-hiking/geojson', {
+    method: 'POST',
+    headers: { Authorization: CONFIG.orsApiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ coordinates: waypoints })
+  });
+  if (!response.ok) throw new Error('Routing request failed');
+  const geojson = await response.json();
+  if (!geojson || !geojson.features || !geojson.features.length) throw new Error('No route returned');
+  return geojson;
+}
+
+function startSnapRoute(context) {
+  const waypoints = getRoutingWaypoints(context.route.geojson);
+  if (waypoints.length < 2) {
+    routePanelNotice = 'This route needs at least two points before it can follow paths.';
+    showRoutePanelContent();
+    return;
+  }
+  clearPathDraft();
+  pathDraft = { mode: context.mode, kind: 'snap', waypoints, geojson: null, requestId: 0, waiting: false, error: '' };
+  snapPreview = { mode: context.mode, index: context.index, originalGeojson: context.route.geojson, originalRouting: context.route.routing, sourcePoints: getRouteLineCoordinates(context.route.geojson).length, waypointCount: waypoints.length };
+  requestPathRoute();
+}
+
+function cancelSnapRoute() {
+  clearPathDraft();
+  snapPreview = null;
+  routePanelNotice = 'Original route kept.';
+  showRoutePanelContent();
+}
+
+function applySnapRoute() {
+  if (!snapPreview || !pathDraft || !pathDraft.geojson) return;
+  const context = getActiveRouteContext();
+  if (!context || context.mode !== snapPreview.mode || context.index !== snapPreview.index) return cancelSnapRoute();
+  const routing = { provider: 'ors', profile: 'foot-hiking', waypoints: pathDraft.waypoints.slice() };
+  if (!window.replaceRouteGeometryInList(context.mode, context.index, pathDraft.geojson, routing)) return;
+  const route = window.getRouteList(context.mode)[context.index];
+  const routeLayer = context.mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
+  routeLayer.clearLayers();
+  const layer = L.geoJSON(route.geojson, { style: window.getRouteStyle(context.mode, route) });
+  layer.eachLayer(item => routeLayer.addLayer(item));
+  clearPathDraft();
+  snapPreview = null;
+  renderRouteAnnotations(context.mode, route);
+  routePanelNotice = 'Walking-path route applied.';
+  showRoutePanelContent();
+}
+
+function showSnapPreview() {
+  const ready = Boolean(pathDraft && pathDraft.geojson && !pathDraft.waiting);
+  panel.classList.remove('library-view');
+  panel.classList.remove('library-scroll-view');
+  panel.setAttribute('aria-label', 'Preview walking-path route');
+  panelContent.className = 'route-detail-content';
+  panelContent.innerHTML = `
+    <div class="panel-heading workflow-heading">
+      <div class="panel-eyebrow">Convert to walking paths</div>
+      <h2 class="route-title">Preview snapped route</h2>
+      <p class="panel-hint">Your original line is unchanged. This preview follows walking paths using ${snapPreview.waypointCount} shape points${snapPreview.sourcePoints ? ` from ${snapPreview.sourcePoints} drawn points` : ''}.</p>
+    </div>
+    <div class="workflow-tip"><span>1</span>${pathDraft?.waiting ? 'Finding walking paths…' : ready ? 'Review the orange preview on the map' : 'Route preview unavailable'}</div>
+    ${pathDraft?.error ? `<p class="route-workflow-error" role="alert">${escapeHtml(pathDraft.error)}</p>` : ''}
+    <div class="route-actions-row">
+      <button id="apply-snapped-route" class="primary-action primary-action-wide" type="button" ${ready ? '' : 'disabled'}><i class="fa-solid fa-check" aria-hidden="true"></i><span>Apply snapped route</span></button>
+      <button id="cancel-snapped-route" class="panel-action" type="button">Cancel</button>
+    </div>`;
+  panelContent.querySelector('#apply-snapped-route').onclick = applySnapRoute;
+  panelContent.querySelector('#cancel-snapped-route').onclick = cancelSnapRoute;
 }
 
 function handlePathClick(mode, event) {
@@ -911,6 +1061,10 @@ function bindRouteShareAndExport(currentRoute) {
       const url = new URL(window.location.href);
       url.searchParams.set('route', encodeRoutePayload(currentRoute));
       const shareUrl = url.toString();
+      if (shareUrl.length > 8000) {
+        if (shareStatus) shareStatus.textContent = 'This free-drawn route is too large to share reliably. Export GPX or GeoJSON instead.';
+        return;
+      }
       let message = 'Share link copied.';
       try {
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1025,6 +1179,7 @@ function showActiveRouteDetails(context) {
       <div class="secondary-actions-row">
         <button class="secondary-action" id="add-route-panel" type="button"><i class="fa-solid fa-plus" aria-hidden="true"></i> New route</button>
         <button class="secondary-action" id="rename-route-panel" type="button"><i class="fa-solid fa-i-cursor" aria-hidden="true"></i> Rename</button>
+        ${!(currentRoute.routing && currentRoute.routing.provider === 'ors' && currentRoute.routing.profile === 'foot-hiking') ? '<button class="secondary-action" id="snap-route-panel" type="button"><i class="fa-solid fa-route" aria-hidden="true"></i> Snap route to paths</button>' : ''}
         <button class="secondary-action" id="share-route-panel" type="button"><i class="fa-solid fa-link" aria-hidden="true"></i> Share</button>
         <button class="secondary-action" id="export-geojson-panel" type="button"><i class="fa-solid fa-file-code" aria-hidden="true"></i> GeoJSON</button>
         <button class="secondary-action" id="export-gpx-panel" type="button"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> GPX</button>
@@ -1143,6 +1298,8 @@ function showActiveRouteDetails(context) {
       routePanelNotice = '';
       showRoutePanelContent();
     };
+    const snapRouteButton = panelContent.querySelector('#snap-route-panel');
+    if (snapRouteButton) snapRouteButton.onclick = function() { startSnapRoute(context); };
     panelContent.querySelector('#delete-route-panel').onclick = function() {
       confirmingDelete = true;
       showRoutePanelContent();
@@ -1160,6 +1317,16 @@ function updateRouteFabLabel() {
 
 function showRoutePanelContent() {
   panel.classList.toggle('route-workflow-view', drawingMode || editingMode || notePlacementMode);
+  if (sharedRouteImport) {
+    panel.classList.remove('library-view');
+    panelContent.className = 'route-detail-content';
+    panelContent.innerHTML = `<div class="panel-heading workflow-heading"><div class="panel-eyebrow">Shared route</div><h2 class="route-title">${sharedRouteImport.waiting ? 'Finding walking paths' : 'Could not load route'}</h2><p class="panel-hint">${escapeHtml(sharedRouteImport.message)}</p></div>`;
+    return;
+  }
+  if (snapPreview) {
+    showSnapPreview();
+    return;
+  }
   if (drawingMode || editingMode) {
     showRouteWorkflow();
     return;
@@ -1363,27 +1530,44 @@ mapUK.on('moveend zoomend', saveMapState);
 mapWorld.on('moveend zoomend', saveMapState);
 
 // --- Load shared route if present in URL ---
-const sharedRoute = getSharedRouteFromUrl();
-if (sharedRoute && sharedRoute.geojson) {
+async function importSharedRoute(sharedRoute) {
+  if (!sharedRoute) return;
   const sharedMode = currentMode || 'uk';
+  if (sharedRoute.routing) {
+    sharedRouteImport = { waiting: true, message: 'Rebuilding this shared walking route from its saved control waypoints…' };
+    setRoutePanelOpen(true);
+    showRoutePanelContent();
+    try {
+      sharedRoute.geojson = await requestOrsFootHikingRoute(sharedRoute.routing.waypoints);
+    } catch (error) {
+      sharedRouteImport = { waiting: false, message: 'This shared route could not be rebuilt. No route was saved; check your connection and try the link again.' };
+      showRoutePanelContent();
+      return;
+    }
+  }
+  if (!sharedRoute.geojson) return;
   const layer = L.geoJSON(sharedRoute.geojson, { style: window.getRouteStyle(sharedMode, sharedRoute) });
+  if (!layer.getBounds().isValid()) return;
   const targetLayer = sharedMode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
   targetLayer.clearLayers();
   layer.eachLayer(l => targetLayer.addLayer(l));
-  window.saveRouteToList(sharedMode, sharedRoute.name || getDefaultRouteName(sharedMode), layer);
-  const routes = window.getRouteList(sharedMode);
-  window.currentRouteIndex[sharedMode] = routes.length - 1;
+  const importedIndex = window.saveRouteToList(sharedMode, sharedRoute.name || getDefaultRouteName(sharedMode), layer, sharedRoute.routing);
+  if (sharedRoute.color) window.updateRouteColorInList(sharedMode, importedIndex, sharedRoute.color);
+  if (Array.isArray(sharedRoute.annotations)) window.updateRouteAnnotationsInList(sharedMode, importedIndex, sharedRoute.annotations);
+  const importedRoute = window.getRouteList(sharedMode)[importedIndex];
+  window.applyRouteStyle(targetLayer, sharedMode, importedRoute);
+  window.currentRouteIndex[sharedMode] = importedIndex;
+  renderRouteAnnotations(sharedMode, importedRoute);
   panelView = 'details';
-  if (layer.getBounds().isValid()) {
-    const panelHeight = 300;
-    const map = sharedMode === 'uk' ? mapUK : mapWorld;
-    map.fitBounds(layer.getBounds(), {
-      paddingBottomRight: [0, panelHeight + 16],
-      paddingTopLeft: [0, 24]
-    });
-  }
+  sharedRouteImport = null;
+  const map = sharedMode === 'uk' ? mapUK : mapWorld;
+  map.fitBounds(layer.getBounds(), { paddingBottomRight: [0, 316], paddingTopLeft: [0, 24] });
   clearSharedRouteParam();
+  showRoutePanelContent();
 }
+
+const sharedRoute = getSharedRouteFromUrl();
+if (sharedRoute) importSharedRoute(sharedRoute);
 
 // --- Remove draw toolbar if open before switching maps ---
 window.switchMap = function(mode) {
