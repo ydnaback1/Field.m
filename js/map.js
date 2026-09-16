@@ -141,6 +141,7 @@ if (L.Draw.Polyline) {
 
 // --- Panel, FAB, and Draw Control State ---
 const fab = document.getElementById('fab-route');
+const backupFab = document.getElementById('fab-route-backup');
 const panel = document.getElementById('bottom-panel');
 const fabIcon = fab.querySelector('i');
 const panelClose = document.getElementById('panel-close');
@@ -158,6 +159,8 @@ let panelView = 'library';
 let routeLibraryQuery = '';
 let routeLibrarySort = 'recent';
 let routeLibraryFilter = 'all';
+let routeBackupCandidate = null;
+let routeBackupNotice = '';
 let renamingRoute = false;
 let confirmingDelete = false;
 let routePanelNotice = '';
@@ -740,6 +743,116 @@ function renderRouteLibraryResults() {
   });
 
   results.appendChild(list);
+}
+
+function getRouteBackupFilename() {
+  return `field-maps-route-backup-${new Date().toISOString().slice(0, 10)}.json`;
+}
+
+function exportRouteBackupFile() {
+  const backup = window.exportRouteBackup();
+  downloadTextFile(getRouteBackupFilename(), JSON.stringify(backup, null, 2), 'application/json;charset=utf-8');
+  routeBackupNotice = `Exported ${backup.routes.uk.length} UK / ${backup.routes.world.length} Worldwide routes.`;
+  showRouteBackup();
+}
+
+async function readRouteBackupFile(file) {
+  routeBackupCandidate = null;
+  routeBackupNotice = '';
+  if (!file) return;
+  if (file.size > window.ROUTE_BACKUP_MAX_BYTES) {
+    routeBackupNotice = 'This backup is too large to import.';
+    showRouteBackup();
+    return;
+  }
+  try {
+    const parsed = JSON.parse(await file.text());
+    const result = window.validateRouteBackup(parsed);
+    if (!result.valid) throw new Error(result.error);
+    routeBackupCandidate = result.backup;
+    routeBackupNotice = `Ready to import ${result.backup.routes.uk.length} UK / ${result.backup.routes.world.length} Worldwide routes.`;
+  } catch (error) {
+    routeBackupNotice = error && error.message ? error.message : 'This backup could not be read.';
+  }
+  showRouteBackup();
+}
+
+function clearActiveRoutesAfterBackupImport() {
+  window.currentRouteIndex.uk = null;
+  window.currentRouteIndex.world = null;
+  window.routeLayerUK.clearLayers();
+  window.routeLayerWorld.clearLayers();
+  window.routeNotesLayerUK.clearLayers();
+  window.routeNotesLayerWorld.clearLayers();
+  window.updateRouteListUI('uk');
+  window.updateRouteListUI('world');
+}
+
+function importRouteBackup(strategy) {
+  if (!routeBackupCandidate) return;
+  if (strategy === 'replace' && !window.confirm('Replace your saved route library with this backup? Your current saved routes will be removed.')) return;
+  const result = window.applyRouteBackup(routeBackupCandidate, strategy);
+  if (!result.valid) {
+    routeBackupNotice = result.error || 'The backup could not be imported.';
+    showRouteBackup();
+    return;
+  }
+  clearActiveRoutesAfterBackupImport();
+  const counts = routeBackupCandidate.routes;
+  routeBackupCandidate = null;
+  routeBackupNotice = `${strategy === 'replace' ? 'Replaced' : 'Merged'} ${counts.uk.length} UK / ${counts.world.length} Worldwide routes.`;
+  panelView = 'library';
+  showRoutePanelContent();
+}
+
+function showRouteBackup() {
+  panel.classList.remove('library-view');
+  panel.classList.remove('library-scroll-view');
+  panel.setAttribute('aria-label', 'Route data and backup');
+  panelContent.className = 'route-detail-content route-backup-content';
+  const preview = routeBackupCandidate ? `${routeBackupCandidate.routes.uk.length} UK routes / ${routeBackupCandidate.routes.world.length} Worldwide routes` : '';
+  panelContent.innerHTML = `
+    <div class="panel-navigation">
+      <button id="back-to-library-from-backup" class="panel-back" type="button"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Saved routes</button>
+    </div>
+    <div class="panel-heading workflow-heading">
+      <div class="panel-eyebrow">Data / backup</div>
+      <h2 class="route-title">Route backup</h2>
+      <p class="panel-hint">Export only saved routes, or restore routes from a Field Maps backup file.</p>
+    </div>
+    <section class="route-backup-section" aria-labelledby="export-route-backup-title">
+      <h3 id="export-route-backup-title">Export route backup</h3>
+      <p>Download all UK and Worldwide saved routes as a portable JSON file.</p>
+      <button id="export-route-backup" class="secondary-action" type="button"><i class="fa-solid fa-download" aria-hidden="true"></i> Export route backup</button>
+    </section>
+    <section class="route-backup-section" aria-labelledby="import-route-backup-title">
+      <h3 id="import-route-backup-title">Import route backup</h3>
+      <p>Choose a Field Maps backup file to check it before changing your saved routes.</p>
+      <input id="route-backup-file" class="sr-only" type="file" accept="application/json,.json">
+      <button id="choose-route-backup" class="secondary-action" type="button"><i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i> Choose backup file</button>
+      ${preview ? `<div class="route-backup-preview"><strong>${escapeHtml(preview)}</strong><span>Choose how to add these routes.</span></div>
+        <div class="route-actions-row route-backup-actions">
+          <button id="merge-route-backup" class="primary-action" type="button">Merge with existing</button>
+          <button id="replace-route-backup" class="panel-action danger-action" type="button">Replace library</button>
+        </div>` : ''}
+    </section>
+    ${routeBackupNotice ? `<p class="route-backup-notice" role="status">${escapeHtml(routeBackupNotice)}</p>` : ''}`;
+  panelContent.querySelector('#back-to-library-from-backup').onclick = function() {
+    panelView = 'library';
+    showRoutePanelContent();
+  };
+  panelContent.querySelector('#export-route-backup').onclick = exportRouteBackupFile;
+  const fileInput = panelContent.querySelector('#route-backup-file');
+  panelContent.querySelector('#choose-route-backup').onclick = () => fileInput.click();
+  fileInput.onchange = function() {
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    readRouteBackupFile(file);
+  };
+  const merge = panelContent.querySelector('#merge-route-backup');
+  if (merge) merge.onclick = () => importRouteBackup('merge');
+  const replace = panelContent.querySelector('#replace-route-backup');
+  if (replace) replace.onclick = () => importRouteBackup('replace');
 }
 
 function startRouteDrawing() {
@@ -1493,6 +1606,10 @@ function showRoutePanelContent() {
     showNoteForm(context);
     return;
   }
+  if (panelView === 'backup') {
+    showRouteBackup();
+    return;
+  }
   if (panelView === 'details' && context) {
     showActiveRouteDetails(context);
   } else {
@@ -1541,6 +1658,7 @@ function removeDrawToolbar() {
 function setRoutePanelOpen(isOpen, restoreFocus = false) {
   panel.classList.toggle('open', isOpen);
   fab.classList.toggle('panel-open', isOpen);
+  backupFab.classList.toggle('panel-open', isOpen);
   fabIcon.className = 'fas fa-route';
   fab.setAttribute('aria-expanded', String(isOpen));
   panel.setAttribute('aria-hidden', String(!isOpen));
@@ -1561,6 +1679,12 @@ function setRoutePanelOpen(isOpen, restoreFocus = false) {
 
 fab.onclick = function() {
   setRoutePanelOpen(!panel.classList.contains('open'));
+};
+
+backupFab.onclick = function() {
+  panelView = 'backup';
+  routeBackupNotice = '';
+  setRoutePanelOpen(true);
 };
 
 panelClose.onclick = function() {
