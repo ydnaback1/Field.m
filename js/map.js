@@ -277,7 +277,26 @@ function formatRouteDate(route) {
   }).format(new Date(timestamp));
 }
 
-function getRouteMetrics(geojson) {
+function calculateRouteWalkingTime(distanceKm, elevationSummary) {
+  if (!Number.isFinite(distanceKm) || distanceKm <= 0) return { totalMinutes: 0, timeStr: '', usesAscent: false };
+  const ascent = Number(elevationSummary?.ascent);
+  const usesAscent = Number.isFinite(ascent) && ascent >= 0;
+  const minutes = (distanceKm / 5) * 60 + (usesAscent ? (ascent / 600) * 60 : 0);
+  const totalMinutes = Math.round(minutes / 5) * 5;
+  const hours = Math.floor(totalMinutes / 60);
+  const remainingMinutes = totalMinutes % 60;
+  return {
+    totalMinutes,
+    timeStr: hours ? `${hours}h${remainingMinutes ? ` ${remainingMinutes}m` : ''}` : `${totalMinutes}m`,
+    usesAscent
+  };
+}
+
+function getRouteMetrics(routeOrGeojson) {
+  // Accepting geometry keeps this helper compatible with any legacy callers;
+  // passing a route enables the cached-ascent allowance.
+  const route = routeOrGeojson?.geojson ? routeOrGeojson : null;
+  const geojson = route?.geojson || routeOrGeojson;
   if (!geojson) return { km: "", mi: "", timeStr: "" };
   const layer = L.geoJSON(geojson);
   let totalMeters = 0;
@@ -292,16 +311,8 @@ function getRouteMetrics(geojson) {
   if (!totalMeters) return { km: "", mi: "", timeStr: "" };
   const km = (totalMeters / 1000).toFixed(2);
   const mi = (totalMeters / 1609.344).toFixed(2);
-  let timeStr = "";
-  let totalMin = Math.round((km / 5) * 60);
-  if (totalMin >= 60) {
-    const hours = Math.floor(totalMin / 60);
-    const mins = totalMin % 60;
-    timeStr = `${hours}h ${mins > 0 ? `${mins}m` : ""}`;
-  } else {
-    timeStr = `${totalMin}m`;
-  }
-  return { km, mi, timeStr };
+  const walkingTime = calculateRouteWalkingTime(totalMeters / 1000, getRouteElevationSummary(route));
+  return { km, mi, ...walkingTime };
 }
 
 function getRouteElevationSummary(route) {
@@ -702,7 +713,7 @@ function renderRouteLibraryResults() {
 
   items.forEach(item => {
     const routeName = item.route.name || 'Untitled route';
-    const metrics = getRouteMetrics(item.route.geojson);
+    const metrics = getRouteMetrics(item.route);
     const distance = formatLibraryDistance(metrics.km);
     const date = formatRouteDate(item.route);
     const isActive = item.mode === (window.currentMode || 'uk') && window.currentRouteIndex[item.mode] === item.index;
@@ -1238,7 +1249,7 @@ function showActiveRouteDetails(context) {
     showNoteDetails(context, selectedAnnotation);
     return;
   }
-  const { km, mi, timeStr } = getRouteMetrics(currentRoute.geojson);
+  const { km, mi, timeStr, usesAscent } = getRouteMetrics(currentRoute);
   const date = formatRouteDate(currentRoute);
   panel.classList.remove('library-view');
   panel.classList.remove('library-scroll-view');
@@ -1263,7 +1274,7 @@ function showActiveRouteDetails(context) {
     </div>`}
     ${!renamingRoute ? `<div class="metric-row">
       ${km ? `<span class="metric-pill"><i class="fa-solid fa-person-walking" aria-hidden="true"></i><span><strong>${km}</strong> km <span class="metric-secondary">${mi} mi</span></span></span>` : ''}
-      ${timeStr ? `<span class="metric-pill"><i class="fa-solid fa-stopwatch" aria-hidden="true"></i><strong>${timeStr}</strong></span>` : ''}
+      ${timeStr ? `<span class="metric-pill" title="Estimated walking time${usesAscent ? ', including ascent' : ''}" aria-label="Estimated walking time: ${timeStr}${usesAscent ? ', including ascent' : ''}"><i class="fa-solid fa-stopwatch" aria-hidden="true"></i><strong>${timeStr}</strong>${usesAscent ? '<i class="fa-solid fa-mountain metric-ascent-indicator" aria-hidden="true"></i>' : ''}</span>` : ''}
     </div>
     ${routePanelNotice ? `<div class="panel-notice" role="status">${escapeHtml(routePanelNotice)}</div>` : ''}
     <div class="route-actions-row active-route-actions">
@@ -1291,6 +1302,7 @@ function showActiveRouteDetails(context) {
           <span><small>Minimum</small><strong>${elevationSummary.min} m</strong></span>
           <span><small>Maximum</small><strong>${elevationSummary.max} m</strong></span>
         </div>
+        ${timeStr ? `<p class="elevation-walking-time">Estimated walking time: <strong>${timeStr}</strong></p>` : ''}
         ${getRouteElevationSamples(currentRoute).length ? buildElevationProfile(getRouteElevationSamples(currentRoute)).markup : '<p class="route-disclosure-empty">Elevation samples are unavailable for this route.</p>'}
         <button id="refresh-elevation-panel" class="panel-action route-disclosure-action" type="button"><i class="fa-solid fa-rotate" aria-hidden="true"></i><span>Refresh elevation</span></button>` : `<p class="route-disclosure-empty">${isElevationRequesting ? 'Getting elevation…' : 'Get route ascent, descent, and elevation range.'}</p>
         <button id="get-elevation-panel" class="panel-action route-disclosure-action" type="button"${isElevationRequesting ? ' disabled' : ''}><i class="fa-solid fa-mountain" aria-hidden="true"></i><span>${isElevationRequesting ? 'Getting elevation…' : 'Get elevation'}</span></button>`}
