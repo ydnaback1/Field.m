@@ -79,6 +79,9 @@ window.routeNotesLayerUK = new L.FeatureGroup().addTo(mapUK);
 window.routeNotesLayerWorld = new L.FeatureGroup().addTo(mapWorld);
 window.routeDraftLayerUK = new L.FeatureGroup().addTo(mapUK);
 window.routeDraftLayerWorld = new L.FeatureGroup().addTo(mapWorld);
+// Ephemeral only: profile inspection must never become part of a saved route.
+const routeProfileMarkerUK = new L.FeatureGroup().addTo(mapUK);
+const routeProfileMarkerWorld = new L.FeatureGroup().addTo(mapWorld);
 
 // Base layers
 var ukBaseLayers = getUKBaseLayers(serviceUrl, apiKey);
@@ -305,6 +308,135 @@ function getRouteElevationSummary(route) {
   const summary = route?.elevation?.summary;
   if (!summary || !['ascent', 'descent', 'min', 'max'].every(key => Number.isFinite(summary[key]))) return null;
   return summary;
+}
+
+function getRouteElevationSamples(route) {
+  const samples = route?.elevation?.samples;
+  if (!Array.isArray(samples) || samples.length < 2) return [];
+  return samples.filter(sample => Number.isFinite(sample?.distance) && Number.isFinite(sample?.elevation) && Number.isFinite(sample?.lat) && Number.isFinite(sample?.lng));
+}
+
+function formatProfileDistance(distance) {
+  if (distance < 1000) return `${Math.round(distance)} m`;
+  const km = distance / 1000;
+  return `${km.toLocaleString(undefined, { maximumFractionDigits: km < 10 ? 1 : 0 })} km`;
+}
+
+function clearRouteProfileMarker() {
+  routeProfileMarkerUK.clearLayers();
+  routeProfileMarkerWorld.clearLayers();
+}
+
+function showRouteProfileMarker(mode, sample) {
+  const layer = mode === 'uk' ? routeProfileMarkerUK : routeProfileMarkerWorld;
+  const otherLayer = mode === 'uk' ? routeProfileMarkerWorld : routeProfileMarkerUK;
+  otherLayer.clearLayers();
+  layer.clearLayers();
+  layer.addLayer(L.circleMarker([sample.lat, sample.lng], {
+    radius: 7,
+    color: '#ffffff',
+    weight: 3,
+    fillColor: '#c94f08',
+    fillOpacity: 1,
+    interactive: false
+  }));
+}
+
+function buildElevationProfile(samples) {
+  const width = 1000, height = 220, left = 54, right = 16, top = 14, bottom = 32;
+  const innerWidth = width - left - right, innerHeight = height - top - bottom;
+  const totalDistance = samples[samples.length - 1].distance;
+  const elevations = samples.map(sample => sample.elevation);
+  const rawMin = Math.min(...elevations), rawMax = Math.max(...elevations);
+  const padding = Math.max(8, (rawMax - rawMin) * 0.12);
+  const min = Math.floor((rawMin - padding) / 5) * 5;
+  const max = Math.ceil((rawMax + padding) / 5) * 5;
+  const xFor = sample => left + (sample.distance / totalDistance) * innerWidth;
+  const yFor = sample => top + ((max - sample.elevation) / (max - min || 1)) * innerHeight;
+  const line = samples.map((sample, index) => `${index ? 'L' : 'M'} ${xFor(sample).toFixed(1)} ${yFor(sample).toFixed(1)}`).join(' ');
+  const area = `${line} L ${xFor(samples[samples.length - 1]).toFixed(1)} ${(height - bottom).toFixed(1)} L ${left} ${(height - bottom).toFixed(1)} Z`;
+  return {
+    totalDistance,
+    markup: `<div class="elevation-profile" tabindex="0" role="group" aria-label="Interactive elevation profile. Use left and right arrow keys to inspect samples.">
+      <svg class="elevation-profile-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
+        <line class="elevation-profile-grid" x1="${left}" x2="${width - right}" y1="${top}" y2="${top}" />
+        <line class="elevation-profile-grid" x1="${left}" x2="${width - right}" y1="${height - bottom}" y2="${height - bottom}" />
+        <path class="elevation-profile-area" d="${area}" />
+        <path class="elevation-profile-line" d="${line}" />
+        <line class="elevation-profile-cursor" x1="${left}" x2="${left}" y1="${top}" y2="${height - bottom}" />
+        <circle class="elevation-profile-point" cx="${left}" cy="${yFor(samples[0]).toFixed(1)}" r="6" />
+        <text class="elevation-profile-y-label" x="${left - 8}" y="${top + 4}" text-anchor="end">${Math.round(max)} m</text>
+        <text class="elevation-profile-y-label" x="${left - 8}" y="${height - bottom + 4}" text-anchor="end">${Math.round(min)} m</text>
+        <text class="elevation-profile-x-label" x="${left}" y="${height - 8}">0 km</text>
+        <text class="elevation-profile-x-label" x="${width - right}" y="${height - 8}" text-anchor="end">${formatProfileDistance(totalDistance)}</text>
+      </svg>
+      <p class="elevation-profile-readout" id="elevation-profile-readout" aria-live="polite">Start: ${formatProfileDistance(samples[0].distance)}, ${Math.round(samples[0].elevation)} m</p>
+    </div>`
+  };
+}
+
+function bindElevationProfile(context, samples) {
+  const profile = panelContent.querySelector('.elevation-profile');
+  if (!profile || samples.length < 2) return;
+  const chart = profile.querySelector('.elevation-profile-chart');
+  const cursor = profile.querySelector('.elevation-profile-cursor');
+  const point = profile.querySelector('.elevation-profile-point');
+  const readout = profile.querySelector('.elevation-profile-readout');
+  const totalDistance = samples[samples.length - 1].distance;
+  const xFor = sample => 54 + (sample.distance / totalDistance) * 930;
+  const yRange = (() => {
+    const values = samples.map(sample => sample.elevation);
+    const padding = Math.max(8, (Math.max(...values) - Math.min(...values)) * 0.12);
+    return { min: Math.floor((Math.min(...values) - padding) / 5) * 5, max: Math.ceil((Math.max(...values) + padding) / 5) * 5 };
+  })();
+  const yFor = sample => 14 + ((yRange.max - sample.elevation) / (yRange.max - yRange.min || 1)) * 174;
+  let activeIndex = 0;
+  let pointerDown = false;
+  const clear = () => {
+    cursor.classList.remove('is-visible');
+    point.classList.remove('is-visible');
+    clearRouteProfileMarker();
+  };
+  const setSample = index => {
+    activeIndex = Math.max(0, Math.min(samples.length - 1, index));
+    const sample = samples[activeIndex];
+    const x = xFor(sample).toFixed(1), y = yFor(sample).toFixed(1);
+    cursor.setAttribute('x1', x); cursor.setAttribute('x2', x);
+    point.setAttribute('cx', x); point.setAttribute('cy', y);
+    cursor.classList.add('is-visible'); point.classList.add('is-visible');
+    readout.textContent = `${formatProfileDistance(sample.distance)} along route — ${Math.round(sample.elevation)} m elevation`;
+    showRouteProfileMarker(context.mode, sample);
+  };
+  const indexAtEvent = event => {
+    const rect = chart.getBoundingClientRect();
+    const fraction = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const distance = fraction * totalDistance;
+    let nearest = 0;
+    for (let index = 1; index < samples.length; index++) {
+      if (Math.abs(samples[index].distance - distance) < Math.abs(samples[nearest].distance - distance)) nearest = index;
+    }
+    return nearest;
+  };
+  profile.addEventListener('pointerdown', event => {
+    pointerDown = true;
+    profile.setPointerCapture?.(event.pointerId);
+    setSample(indexAtEvent(event));
+    event.preventDefault();
+  });
+  profile.addEventListener('pointermove', event => {
+    if (event.pointerType === 'mouse' || pointerDown) setSample(indexAtEvent(event));
+  });
+  profile.addEventListener('pointerup', () => { pointerDown = false; clear(); });
+  profile.addEventListener('pointercancel', () => { pointerDown = false; clear(); });
+  profile.addEventListener('pointerleave', event => { if (event.pointerType === 'mouse' && !pointerDown) clear(); });
+  profile.addEventListener('blur', clear);
+  profile.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === 'Home') setSample(0);
+    else if (event.key === 'End') setSample(samples.length - 1);
+    else setSample(activeIndex + (event.key === 'ArrowRight' ? 1 : -1));
+  });
 }
 
 function getShareableRouteName(route) {
@@ -1159,6 +1291,7 @@ function showActiveRouteDetails(context) {
           <span><small>Minimum</small><strong>${elevationSummary.min} m</strong></span>
           <span><small>Maximum</small><strong>${elevationSummary.max} m</strong></span>
         </div>
+        ${getRouteElevationSamples(currentRoute).length ? buildElevationProfile(getRouteElevationSamples(currentRoute)).markup : '<p class="route-disclosure-empty">Elevation samples are unavailable for this route.</p>'}
         <button id="refresh-elevation-panel" class="panel-action route-disclosure-action" type="button"><i class="fa-solid fa-rotate" aria-hidden="true"></i><span>Refresh elevation</span></button>` : `<p class="route-disclosure-empty">${isElevationRequesting ? 'Getting elevation…' : 'Get route ascent, descent, and elevation range.'}</p>
         <button id="get-elevation-panel" class="panel-action route-disclosure-action" type="button"${isElevationRequesting ? ' disabled' : ''}><i class="fa-solid fa-mountain" aria-hidden="true"></i><span>${isElevationRequesting ? 'Getting elevation…' : 'Get elevation'}</span></button>`}
       </div>
@@ -1226,7 +1359,15 @@ function showActiveRouteDetails(context) {
   const elevationDisclosure = panelContent.querySelector('.route-elevation');
   if (addRouteButton) addRouteButton.onclick = startRouteDrawing;
   if (addNoteButton) addNoteButton.onclick = startNotePlacement;
-  if (elevationDisclosure) elevationDisclosure.ontoggle = function() { elevationDisclosureOpen = elevationDisclosure.open; };
+  if (elevationDisclosure) elevationDisclosure.ontoggle = function() {
+    elevationDisclosureOpen = elevationDisclosure.open;
+    clearRouteProfileMarker();
+    if (elevationDisclosure.open) scheduleRouteFitToVisibleMap(context.mode);
+  };
+  if (elevationSummary) {
+    bindElevationProfile(context, getRouteElevationSamples(currentRoute));
+    if (elevationDisclosure?.open) scheduleRouteFitToVisibleMap(context.mode);
+  }
   const elevationButton = panelContent.querySelector('#get-elevation-panel, #refresh-elevation-panel');
   if (elevationButton) elevationButton.onclick = async function() {
     const requestKey = `${context.mode}:${context.index}`;
@@ -1397,6 +1538,7 @@ function setRoutePanelOpen(isOpen, restoreFocus = false) {
     addDrawToolbar();
     window.requestAnimationFrame(() => panelClose.focus({ preventScroll: true }));
   } else {
+    clearRouteProfileMarker();
     panelContent.innerHTML = '';
     removeDrawToolbar();
     drawingMode = false;
