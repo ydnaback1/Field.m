@@ -54,6 +54,21 @@ function updateRouteInList(mode, idx, geojson) {
     return false;
 }
 
+function replaceRouteGeometryInList(mode, idx, geojson, routing) {
+    let arr = getRouteList(mode);
+    if (!arr[idx] || !geojson) return false;
+    arr[idx].geojson = geojson;
+    if (routing) arr[idx].routing = routing;
+    else delete arr[idx].routing;
+    // Geometry-derived data must never survive a geometry replacement.
+    delete arr[idx].elevation;
+    delete arr[idx].elevationData;
+    delete arr[idx].cachedElevation;
+    arr[idx].updatedAt = new Date().toISOString();
+    localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
+    return true;
+}
+
 function renameRouteInList(mode, idx, name) {
     let arr = getRouteList(mode);
     if (arr[idx]) {
@@ -166,6 +181,7 @@ function loadRouteByIndex(mode, idx) {
 window.getRouteList = getRouteList;
 window.saveRouteToList = saveRouteToList;
 window.updateRouteInList = updateRouteInList;
+window.replaceRouteGeometryInList = replaceRouteGeometryInList;
 window.renameRouteInList = renameRouteInList;
 window.updateRouteColorInList = updateRouteColorInList;
 window.getRouteAnnotations = getRouteAnnotations;
