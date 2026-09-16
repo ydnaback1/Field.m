@@ -57,6 +57,12 @@ jobs:
 
           test -s config.runtime.js
 
+      - name: Generate versioned service worker
+        shell: bash
+        run: |
+          sed "s/__FIELD_MAPS_BUILD_ID__/${GITHUB_SHA}/g" sw.template.js > sw.js
+          test -s sw.js
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 

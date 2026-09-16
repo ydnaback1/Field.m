@@ -836,6 +836,16 @@ function showRouteBackup() {
           <button id="replace-route-backup" class="panel-action danger-action" type="button">Replace library</button>
         </div>` : ''}
     </section>
+    <section class="route-backup-section" aria-labelledby="app-storage-title">
+      <h3 id="app-storage-title">App / storage</h3>
+      <p>App files can be checked or refreshed without changing your saved routes.</p>
+      <div class="app-build-version">Build <strong id="app-build-version">Checking…</strong></div>
+      <div class="route-actions-row route-backup-actions">
+        <button id="check-app-updates" class="secondary-action" type="button">Check for updates</button>
+        <button id="refresh-app-files" class="secondary-action" type="button">Refresh app files</button>
+      </div>
+      <p id="app-storage-notice" class="route-backup-notice" role="status"></p>
+    </section>
     ${routeBackupNotice ? `<p class="route-backup-notice" role="status">${escapeHtml(routeBackupNotice)}</p>` : ''}`;
   panelContent.querySelector('#back-to-library-from-backup').onclick = function() {
     panelView = 'library';
@@ -853,6 +863,39 @@ function showRouteBackup() {
   if (merge) merge.onclick = () => importRouteBackup('merge');
   const replace = panelContent.querySelector('#replace-route-backup');
   if (replace) replace.onclick = () => importRouteBackup('replace');
+  const buildVersion = panelContent.querySelector('#app-build-version');
+  const appStorageNotice = panelContent.querySelector('#app-storage-notice');
+  const checkUpdates = panelContent.querySelector('#check-app-updates');
+  const refreshFiles = panelContent.querySelector('#refresh-app-files');
+  if (!window.FieldMapsPwa?.supported()) {
+    buildVersion.textContent = 'Service worker unavailable';
+    checkUpdates.disabled = true;
+    refreshFiles.disabled = true;
+  } else {
+    window.FieldMapsPwa.getBuildInfo().then((info) => {
+      buildVersion.textContent = info.label;
+    });
+    checkUpdates.onclick = async function() {
+      checkUpdates.disabled = true;
+      appStorageNotice.textContent = 'Checking for updates…';
+      try {
+        appStorageNotice.textContent = await window.FieldMapsPwa.checkForUpdates();
+      } catch (error) {
+        appStorageNotice.textContent = 'Could not check for updates.';
+      }
+      checkUpdates.disabled = false;
+    };
+    refreshFiles.onclick = async function() {
+      refreshFiles.disabled = true;
+      appStorageNotice.textContent = 'Refreshing app files…';
+      try {
+        await window.FieldMapsPwa.refreshAppFiles();
+      } catch (error) {
+        appStorageNotice.textContent = 'Could not refresh app files.';
+        refreshFiles.disabled = false;
+      }
+    };
+  }
 }
 
 function startRouteDrawing() {

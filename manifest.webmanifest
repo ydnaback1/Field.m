@@ -1,0 +1,18 @@
+{
+  "name": "Field Maps",
+  "short_name": "Field Maps",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#171a20",
+  "background_color": "#eef1f4",
+  "icons": [
+    {
+      "src": "explore_24dp_FILL0_wght400_GRAD0_opsz24.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
