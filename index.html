@@ -17,6 +17,10 @@
 <body>
   <div id="map-uk"></div>
   <div id="map-world"></div>
+  <aside id="app-update-notice" class="app-update-notice" role="status" hidden>
+    <span>Update available</span>
+    <button id="app-update-now" type="button">Update now</button>
+  </aside>
 
   <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.7.0/proj4.js"></script>
@@ -48,16 +52,8 @@
   </button>
 
 
+  <script src="js/pwa.js"></script>
   <script src="js/map.js"></script>
-  <script>
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js").catch((error) => {
-          console.warn("Field Maps service worker registration failed.", error);
-        });
-      });
-    }
-  </script>
 
 
 </body>

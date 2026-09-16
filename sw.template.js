@@ -10,6 +10,7 @@ const APP_ASSETS = [
   "plugins/leaflet-measure/leaflet.measure.css",
   "plugins/leaflet-measure/leaflet.measure.js",
   "config.js",
+  "js/pwa.js",
   "js/layers.js",
   "js/controls.js",
   "js/routes.js",
@@ -34,6 +35,9 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+  if (event.data?.type === "GET_BUILD_ID" && event.ports[0]) {
+    event.ports[0].postMessage({ type: "FIELD_MAPS_BUILD_ID", buildId: BUILD_ID });
+  }
 });
 
 self.addEventListener("fetch", (event) => {
