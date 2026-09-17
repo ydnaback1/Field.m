@@ -75,6 +75,9 @@ var mapWorld = L.map('map-world', {
 // Feature groups for routes
 window.routeLayerUK = new L.FeatureGroup().addTo(mapUK);
 window.routeLayerWorld = new L.FeatureGroup().addTo(mapWorld);
+// Display-only overlays; saved geometry and editing always use the route layers above.
+const routeSteepnessLayerUK = new L.FeatureGroup().addTo(mapUK);
+const routeSteepnessLayerWorld = new L.FeatureGroup().addTo(mapWorld);
 window.routeNotesLayerUK = new L.FeatureGroup().addTo(mapUK);
 window.routeNotesLayerWorld = new L.FeatureGroup().addTo(mapWorld);
 window.routeDraftLayerUK = new L.FeatureGroup().addTo(mapUK);
@@ -182,6 +185,84 @@ const ROUTE_COLOR_CHOICES = [
   { value: '#3b6ea5', label: 'Slate blue' },
   { value: '#4d7c0f', label: 'Forest green' }
 ];
+
+const STEEPNESS_BANDS = [
+  { id: 'strong-descent', label: 'Strong descent', range: '\u2264 -10%', color: '#2b6cb0', max: -10 },
+  { id: 'moderate-descent', label: 'Moderate descent', range: '-10% to -5%', color: '#4c9ad4', max: -5 },
+  { id: 'gentle-descent', label: 'Gentle descent', range: '-5% to -2%', color: '#76b7c5', max: -2 },
+  { id: 'flat', label: 'Approximately flat', range: '-2% to 2%', color: '#8a929b', max: 2 },
+  { id: 'gentle-ascent', label: 'Gentle ascent', range: '2% to 5%', color: '#c89b52', max: 5 },
+  { id: 'moderate-ascent', label: 'Moderate ascent', range: '5% to 10%', color: '#d66a45', max: 10 },
+  { id: 'strong-ascent', label: 'Strong ascent', range: '\u2265 10%', color: '#a93d3d', max: Infinity }
+];
+const routeDisplayMode = { uk: 'solid', world: 'solid' };
+
+function getRouteLayer(mode) { return mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld; }
+function getRouteSteepnessLayer(mode) { return mode === 'uk' ? routeSteepnessLayerUK : routeSteepnessLayerWorld; }
+
+function setSolidRouteVisibility(mode, route, visible) {
+  const style = { ...window.getRouteStyle(mode, route), opacity: visible ? 1 : 0 };
+  getRouteLayer(mode).eachLayer(child => {
+    if (typeof child.setStyle === 'function') child.setStyle(style);
+  });
+}
+
+function medianElevation(samples, index) {
+  const values = samples.slice(Math.max(0, index - 1), Math.min(samples.length, index + 2))
+    .map(sample => sample.elevation).sort((a, b) => a - b);
+  return values[Math.floor(values.length / 2)];
+}
+
+function getSteepnessBand(gradient) {
+  return STEEPNESS_BANDS.find(band => gradient <= band.max) || STEEPNESS_BANDS[3];
+}
+
+function buildSteepnessSections(route) {
+  const samples = getRouteElevationSamples(route);
+  if (samples.length < 2) return [];
+  const sections = [];
+  for (let index = 0; index < samples.length - 1; index++) {
+    // Median smoothing and a 3-sample look-around suppress short DEM noise only
+    // for the display; cached elevations and profile data stay untouched.
+    const start = Math.max(0, index - 1);
+    const end = Math.min(samples.length - 1, index + 2);
+    const horizontalDistance = samples[end].distance - samples[start].distance;
+    if (!Number.isFinite(horizontalDistance) || horizontalDistance < 30) continue;
+    const elevationChange = medianElevation(samples, end) - medianElevation(samples, start);
+    const gradient = Math.abs(elevationChange) < 1.5 ? 0 : (elevationChange / horizontalDistance) * 100;
+    const band = getSteepnessBand(gradient);
+    const startPoint = [samples[index].lat, samples[index].lng];
+    const endPoint = [samples[index + 1].lat, samples[index + 1].lng];
+    const previous = sections[sections.length - 1];
+    if (previous && previous.band.id === band.id) previous.latlngs.push(endPoint);
+    else sections.push({ band, latlngs: [startPoint, endPoint] });
+  }
+  return sections;
+}
+
+function clearSteepnessDisplay(mode) {
+  getRouteSteepnessLayer(mode).clearLayers();
+  routeDisplayMode[mode] = 'solid';
+  const index = window.currentRouteIndex[mode];
+  const route = Number.isInteger(index) ? window.getRouteList(mode)[index] : null;
+  if (route) setSolidRouteVisibility(mode, route, true);
+}
+
+function showSteepnessDisplay(mode, route) {
+  const sections = buildSteepnessSections(route);
+  if (!sections.length) return false;
+  const overlay = getRouteSteepnessLayer(mode);
+  overlay.clearLayers();
+  sections.forEach(section => overlay.addLayer(L.polyline(section.latlngs, {
+    color: section.band.color, weight: 5, opacity: 0.95,
+    lineCap: 'round', lineJoin: 'round', interactive: false
+  })));
+  setSolidRouteVisibility(mode, route, false);
+  routeDisplayMode[mode] = 'steepness';
+  return true;
+}
+
+window.clearSteepnessDisplay = clearSteepnessDisplay;
 
 // --- Panel Main Function ---
 function getDefaultRouteName(mode) {
@@ -778,6 +859,8 @@ async function readRouteBackupFile(file) {
 }
 
 function clearActiveRoutesAfterBackupImport() {
+  clearSteepnessDisplay('uk');
+  clearSteepnessDisplay('world');
   window.currentRouteIndex.uk = null;
   window.currentRouteIndex.world = null;
   window.routeLayerUK.clearLayers();
@@ -1013,6 +1096,7 @@ function applySnapRoute() {
   const routing = { provider: 'ors', profile: 'foot-hiking', waypoints: pathDraft.waypoints.slice() };
   if (!window.replaceRouteGeometryInList(context.mode, context.index, pathDraft.geojson, routing)) return;
   const route = window.getRouteList(context.mode)[context.index];
+  clearSteepnessDisplay(context.mode);
   const routeLayer = context.mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
   routeLayer.clearLayers();
   const layer = L.geoJSON(route.geojson, { style: window.getRouteStyle(context.mode, route) });
@@ -1467,6 +1551,20 @@ function showActiveRouteDetails(context) {
     <details class="route-disclosure route-customisation">
       <summary><span><i class="fa-solid fa-palette" aria-hidden="true"></i> Appearance</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
       <div class="route-disclosure-body">
+        <div class="route-display-control" role="radiogroup" aria-label="Route display mode">
+          <span class="route-color-label">Route display</span>
+          <div class="route-display-options">
+            <button type="button" class="route-display-option${routeDisplayMode[context.mode] === 'solid' ? ' is-selected' : ''}" data-route-display="solid" role="radio" aria-checked="${routeDisplayMode[context.mode] === 'solid'}">Solid colour</button>
+            <button type="button" class="route-display-option${routeDisplayMode[context.mode] === 'steepness' ? ' is-selected' : ''}" data-route-display="steepness" role="radio" aria-checked="${routeDisplayMode[context.mode] === 'steepness'}"${getRouteElevationSamples(currentRoute).length >= 2 ? '' : ' disabled'}>Steepness</button>
+          </div>
+        </div>
+        ${routeDisplayMode[context.mode] === 'steepness' ? `<div class="steepness-legend" role="img" aria-label="Steepness colour legend: strong descent at 10 percent or steeper, moderate descent 5 to 10 percent, gentle descent 2 to 5 percent, approximately flat within 2 percent, gentle ascent 2 to 5 percent, moderate ascent 5 to 10 percent, and strong ascent at 10 percent or steeper.">
+          <div class="steepness-legend-labels"><span>Strong descent <i aria-hidden="true">←</i></span><span><i aria-hidden="true">→</i> Strong ascent</span></div>
+          <div class="steepness-legend-bar" aria-hidden="true">${STEEPNESS_BANDS.map(band => `<i style="--steepness-colour: ${band.color}"></i>`).join('')}</div>
+          <div class="steepness-legend-scale"><span>Descent</span><span>← flat →</span><span>Ascent</span></div>
+          <div class="steepness-legend-thresholds" aria-hidden="true"><span>-10</span><span>-5</span><span>-2</span><span>2</span><span>5</span><span>10%</span></div>
+        </div>` : ''}
+        ${getRouteElevationSamples(currentRoute).length < 2 ? '<p class="route-display-hint">Fetch elevation first to use Steepness.</p>' : ''}
         <div class="route-color-control" role="group" aria-label="Route colour">
           <span class="route-color-label">Route colour</span>
           <div class="route-color-options">
@@ -1544,12 +1642,17 @@ function showActiveRouteDetails(context) {
     elevationDisclosureOpen = true;
     routePanelNotice = '';
     showRoutePanelContent();
+    let elevationUpdated = false;
     try {
       await window.fetchRouteElevation(context.mode, context.index);
+      elevationUpdated = true;
     } catch (error) {
       routePanelNotice = 'Could not get elevation. Your route is unchanged; please try again.';
     } finally {
       if (elevationRequesting === requestKey) elevationRequesting = null;
+      if (elevationUpdated && routeDisplayMode[context.mode] === 'steepness') {
+        showSteepnessDisplay(context.mode, window.getRouteList(context.mode)[context.index]);
+      }
       showRoutePanelContent();
     }
   };
@@ -1565,12 +1668,25 @@ function showActiveRouteDetails(context) {
       if (!window.updateRouteColorInList(context.mode, context.index, color)) return;
       const routeLayer = context.mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
       window.applyRouteStyle(routeLayer, context.mode, { color });
+      if (routeDisplayMode[context.mode] === 'steepness') setSolidRouteVisibility(context.mode, { color }, false);
       renderRouteAnnotations(context.mode, window.getRouteList(context.mode)[context.index]);
       routePanelNotice = 'Route colour updated.';
       showRoutePanelContent();
     };
   });
+  panelContent.querySelectorAll('[data-route-display]').forEach(button => {
+    button.onclick = function() {
+      const display = button.dataset.routeDisplay;
+      if (display === 'steepness' && !showSteepnessDisplay(context.mode, currentRoute)) {
+        routePanelNotice = 'Fetch elevation first to use Steepness.';
+      } else if (display === 'solid') {
+        clearSteepnessDisplay(context.mode);
+      }
+      showRoutePanelContent();
+    };
+  });
   panelContent.querySelector('#edit-route-panel').onclick = function() {
+    if (routeDisplayMode[context.mode] === 'steepness') clearSteepnessDisplay(context.mode);
     editingMode = true;
     drawingMode = false;
     routePanelNotice = '';
@@ -1588,9 +1704,11 @@ function showActiveRouteDetails(context) {
     panelContent.querySelector('#confirm-delete-route').onclick = function() {
       window.deleteRouteFromList(context.mode, context.index);
       if (context.mode === 'uk') {
+        clearSteepnessDisplay('uk');
         window.routeLayerUK.clearLayers();
         window.routeNotesLayerUK.clearLayers();
       } else {
+        clearSteepnessDisplay('world');
         window.routeLayerWorld.clearLayers();
         window.routeNotesLayerWorld.clearLayers();
       }
@@ -1745,6 +1863,7 @@ mapUK.on(L.Draw.Event.CREATED, function (e) {
   drawingMode = false;
   editingMode = false;
   if (e.layerType === 'polyline') {
+    clearSteepnessDisplay('uk');
     const defaultName = getDefaultRouteName('uk');
     window.routeLayerUK.clearLayers();
     window.routeNotesLayerUK.clearLayers();
@@ -1771,6 +1890,7 @@ mapWorld.on(L.Draw.Event.CREATED, function (e) {
   drawingMode = false;
   editingMode = false;
   if (e.layerType === 'polyline') {
+    clearSteepnessDisplay('world');
     const defaultName = getDefaultRouteName('world');
     window.routeLayerWorld.clearLayers();
     window.routeNotesLayerWorld.clearLayers();

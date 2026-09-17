@@ -157,6 +157,7 @@ function updateRouteInList(mode, idx, geojson) {
         // Elevation belongs to this exact displayed line. Any geometry replacement
         // (including editing or future route snapping) makes it stale.
         delete arr[idx].elevation;
+        if (typeof window.clearSteepnessDisplay === 'function') window.clearSteepnessDisplay(mode);
         arr[idx].updatedAt = new Date().toISOString();
         localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
         return true;
@@ -183,6 +184,7 @@ function replaceRouteGeometryInList(mode, idx, geojson, routing) {
     delete arr[idx].elevation;
     delete arr[idx].elevationData;
     delete arr[idx].cachedElevation;
+    if (typeof window.clearSteepnessDisplay === 'function') window.clearSteepnessDisplay(mode);
     arr[idx].updatedAt = new Date().toISOString();
     localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
     return true;
@@ -397,6 +399,7 @@ function loadRouteByIndex(mode, idx) {
     if (!routes[idx] || !routes[idx].geojson) return false;
     const route = routes[idx];
     let layer = L.geoJSON(route.geojson, { style: getRouteStyle(mode, route) });
+    if (typeof window.clearSteepnessDisplay === 'function') window.clearSteepnessDisplay(mode);
     const isMobileLayout = typeof window.isMobileRouteLayout === 'function' && window.isMobileRouteLayout();
     const padding = { paddingBottomRight: [0, 216], paddingTopLeft: [0, 24] };
 
