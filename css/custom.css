@@ -738,6 +738,121 @@ select {
   background: var(--surface-hover);
 }
 
+.route-display-control {
+  display: grid;
+  gap: 7px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-hover);
+}
+
+.route-display-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+#panel-content .route-display-option {
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  color: var(--panel-text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#panel-content .route-display-option.is-selected {
+  border-color: var(--accent-strong);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+#panel-content .route-display-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.route-display-hint {
+  margin: -2px 0 0;
+  color: var(--muted-text);
+  font-size: 0.78rem;
+}
+
+.steepness-legend {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px 7px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface-hover);
+  color: var(--panel-text);
+  font-size: 0.7rem;
+}
+
+.steepness-legend-labels,
+.steepness-legend-scale,
+.steepness-legend-thresholds {
+  display: grid;
+  align-items: center;
+}
+
+.steepness-legend-labels {
+  grid-template-columns: 1fr 1fr;
+  font-weight: 700;
+}
+
+.steepness-legend-labels span:last-child {
+  text-align: right;
+}
+
+.steepness-legend-labels i {
+  font-style: normal;
+}
+
+.steepness-legend-bar {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+.steepness-legend-bar i {
+  flex: 1 1 0;
+  background: var(--steepness-colour);
+}
+
+.steepness-legend-scale {
+  grid-template-columns: 1fr auto 1fr;
+  font-size: 0.68rem;
+}
+
+.steepness-legend-scale span:nth-child(2) {
+  color: var(--panel-text);
+  font-weight: 700;
+}
+
+.steepness-legend-scale span:last-child {
+  text-align: right;
+}
+
+.steepness-legend-thresholds {
+  grid-template-columns: repeat(6, 1fr);
+  color: var(--muted-text);
+  font-size: 0.65rem;
+}
+
+.steepness-legend-thresholds span:not(:first-child) {
+  text-align: center;
+}
+
+.steepness-legend-thresholds span:last-child {
+  text-align: right;
+}
+
 .route-color-label {
   color: var(--muted-text);
   font-size: 0.82rem;
