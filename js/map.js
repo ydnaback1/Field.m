@@ -195,6 +195,16 @@ const STEEPNESS_BANDS = [
   { id: 'moderate-ascent', label: 'Moderate ascent', range: '5% to 10%', color: '#d66a45', max: 10 },
   { id: 'strong-ascent', label: 'Strong ascent', range: '\u2265 10%', color: '#a93d3d', max: Infinity }
 ];
+// Route-relative only: these colours express low-to-high elevation, not absolute altitude.
+const ELEVATION_BANDS = [
+  { id: 'low', color: '#2b6cb0' },
+  { id: 'lower', color: '#3f7eb8' },
+  { id: 'low-mid', color: '#4f9295' },
+  { id: 'mid', color: '#71965d' },
+  { id: 'high-mid', color: '#a38b4d' },
+  { id: 'higher', color: '#bf7144' },
+  { id: 'high', color: '#a94f3d' }
+];
 const routeDisplayMode = { uk: 'solid', world: 'solid' };
 
 function getRouteLayer(mode) { return mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld; }
@@ -240,6 +250,31 @@ function buildSteepnessSections(route) {
   return sections;
 }
 
+function getElevationBand(elevation, minimum, maximum) {
+  if (maximum <= minimum) return ELEVATION_BANDS[Math.floor(ELEVATION_BANDS.length / 2)];
+  const proportion = Math.max(0, Math.min(1, (elevation - minimum) / (maximum - minimum)));
+  return ELEVATION_BANDS[Math.min(ELEVATION_BANDS.length - 1, Math.floor(proportion * ELEVATION_BANDS.length))];
+}
+
+function buildElevationSections(route) {
+  const samples = getRouteElevationSamples(route);
+  if (samples.length < 2) return [];
+  const elevations = samples.map(sample => sample.elevation);
+  const minimum = Math.min(...elevations);
+  const maximum = Math.max(...elevations);
+  const sections = [];
+  for (let index = 0; index < samples.length - 1; index++) {
+    // A section represents the elevation at its midpoint, using only cached samples.
+    const band = getElevationBand((samples[index].elevation + samples[index + 1].elevation) / 2, minimum, maximum);
+    const startPoint = [samples[index].lat, samples[index].lng];
+    const endPoint = [samples[index + 1].lat, samples[index + 1].lng];
+    const previous = sections[sections.length - 1];
+    if (previous && previous.band.id === band.id) previous.latlngs.push(endPoint);
+    else sections.push({ band, latlngs: [startPoint, endPoint] });
+  }
+  return sections;
+}
+
 function clearSteepnessDisplay(mode) {
   getRouteSteepnessLayer(mode).clearLayers();
   routeDisplayMode[mode] = 'solid';
@@ -249,7 +284,14 @@ function clearSteepnessDisplay(mode) {
 }
 
 function showSteepnessDisplay(mode, route) {
-  const sections = buildSteepnessSections(route);
+  return showRouteVisualisation(mode, route, 'steepness', buildSteepnessSections(route));
+}
+
+function showElevationDisplay(mode, route) {
+  return showRouteVisualisation(mode, route, 'elevation', buildElevationSections(route));
+}
+
+function showRouteVisualisation(mode, route, display, sections) {
   if (!sections.length) return false;
   const overlay = getRouteSteepnessLayer(mode);
   overlay.clearLayers();
@@ -258,8 +300,21 @@ function showSteepnessDisplay(mode, route) {
     lineCap: 'round', lineJoin: 'round', interactive: false
   })));
   setSolidRouteVisibility(mode, route, false);
-  routeDisplayMode[mode] = 'steepness';
+  routeDisplayMode[mode] = display;
   return true;
+}
+
+function buildElevationLegend(route) {
+  const elevations = getRouteElevationSamples(route).map(sample => sample.elevation);
+  const minimum = Math.min(...elevations);
+  const maximum = Math.max(...elevations);
+  const midpoint = minimum + ((maximum - minimum) / 2);
+  const label = `Elevation colour legend for this route: low ${Math.round(minimum)} metres, midpoint ${Math.round(midpoint)} metres, high ${Math.round(maximum)} metres.`;
+  return `<div class="elevation-legend" role="img" aria-label="${label}">
+    <div class="elevation-legend-labels"><span>Low elevation</span><span>High elevation</span></div>
+    <div class="elevation-legend-bar" aria-hidden="true">${ELEVATION_BANDS.map(band => `<i style="--elevation-colour: ${band.color}"></i>`).join('')}</div>
+    <div class="elevation-legend-values"><span>${Math.round(minimum)} m</span><span>${Math.round(midpoint)} m</span><span>${Math.round(maximum)} m</span></div>
+  </div>`;
 }
 
 window.clearSteepnessDisplay = clearSteepnessDisplay;
@@ -1556,6 +1611,7 @@ function showActiveRouteDetails(context) {
           <div class="route-display-options">
             <button type="button" class="route-display-option${routeDisplayMode[context.mode] === 'solid' ? ' is-selected' : ''}" data-route-display="solid" role="radio" aria-checked="${routeDisplayMode[context.mode] === 'solid'}">Solid colour</button>
             <button type="button" class="route-display-option${routeDisplayMode[context.mode] === 'steepness' ? ' is-selected' : ''}" data-route-display="steepness" role="radio" aria-checked="${routeDisplayMode[context.mode] === 'steepness'}"${getRouteElevationSamples(currentRoute).length >= 2 ? '' : ' disabled'}>Steepness</button>
+            <button type="button" class="route-display-option${routeDisplayMode[context.mode] === 'elevation' ? ' is-selected' : ''}" data-route-display="elevation" role="radio" aria-checked="${routeDisplayMode[context.mode] === 'elevation'}"${getRouteElevationSamples(currentRoute).length >= 2 ? '' : ' disabled'}>Elevation</button>
           </div>
         </div>
         ${routeDisplayMode[context.mode] === 'steepness' ? `<div class="steepness-legend" role="img" aria-label="Steepness colour legend: strong descent at 10 percent or steeper, moderate descent 5 to 10 percent, gentle descent 2 to 5 percent, approximately flat within 2 percent, gentle ascent 2 to 5 percent, moderate ascent 5 to 10 percent, and strong ascent at 10 percent or steeper.">
@@ -1564,7 +1620,8 @@ function showActiveRouteDetails(context) {
           <div class="steepness-legend-scale"><span>Descent</span><span>← flat →</span><span>Ascent</span></div>
           <div class="steepness-legend-thresholds" aria-hidden="true"><span>-10</span><span>-5</span><span>-2</span><span>2</span><span>5</span><span>10%</span></div>
         </div>` : ''}
-        ${getRouteElevationSamples(currentRoute).length < 2 ? '<p class="route-display-hint">Fetch elevation first to use Steepness.</p>' : ''}
+        ${routeDisplayMode[context.mode] === 'elevation' ? buildElevationLegend(currentRoute) : ''}
+        ${getRouteElevationSamples(currentRoute).length < 2 ? '<p class="route-display-hint">Fetch elevation first to use Steepness or Elevation.</p>' : ''}
         <div class="route-color-control" role="group" aria-label="Route colour">
           <span class="route-color-label">Route colour</span>
           <div class="route-color-options">
@@ -1650,8 +1707,10 @@ function showActiveRouteDetails(context) {
       routePanelNotice = 'Could not get elevation. Your route is unchanged; please try again.';
     } finally {
       if (elevationRequesting === requestKey) elevationRequesting = null;
-      if (elevationUpdated && routeDisplayMode[context.mode] === 'steepness') {
-        showSteepnessDisplay(context.mode, window.getRouteList(context.mode)[context.index]);
+      if (elevationUpdated && routeDisplayMode[context.mode] !== 'solid') {
+        const route = window.getRouteList(context.mode)[context.index];
+        if (routeDisplayMode[context.mode] === 'steepness') showSteepnessDisplay(context.mode, route);
+        else showElevationDisplay(context.mode, route);
       }
       showRoutePanelContent();
     }
@@ -1668,7 +1727,7 @@ function showActiveRouteDetails(context) {
       if (!window.updateRouteColorInList(context.mode, context.index, color)) return;
       const routeLayer = context.mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
       window.applyRouteStyle(routeLayer, context.mode, { color });
-      if (routeDisplayMode[context.mode] === 'steepness') setSolidRouteVisibility(context.mode, { color }, false);
+      if (routeDisplayMode[context.mode] !== 'solid') setSolidRouteVisibility(context.mode, { color }, false);
       renderRouteAnnotations(context.mode, window.getRouteList(context.mode)[context.index]);
       routePanelNotice = 'Route colour updated.';
       showRoutePanelContent();
@@ -1677,8 +1736,11 @@ function showActiveRouteDetails(context) {
   panelContent.querySelectorAll('[data-route-display]').forEach(button => {
     button.onclick = function() {
       const display = button.dataset.routeDisplay;
-      if (display === 'steepness' && !showSteepnessDisplay(context.mode, currentRoute)) {
-        routePanelNotice = 'Fetch elevation first to use Steepness.';
+      const showed = display === 'steepness'
+        ? showSteepnessDisplay(context.mode, currentRoute)
+        : display === 'elevation' && showElevationDisplay(context.mode, currentRoute);
+      if (display !== 'solid' && !showed) {
+        routePanelNotice = 'Fetch elevation first to use Steepness or Elevation.';
       } else if (display === 'solid') {
         clearSteepnessDisplay(context.mode);
       }
@@ -1686,7 +1748,7 @@ function showActiveRouteDetails(context) {
     };
   });
   panelContent.querySelector('#edit-route-panel').onclick = function() {
-    if (routeDisplayMode[context.mode] === 'steepness') clearSteepnessDisplay(context.mode);
+    if (routeDisplayMode[context.mode] !== 'solid') clearSteepnessDisplay(context.mode);
     editingMode = true;
     drawingMode = false;
     routePanelNotice = '';
