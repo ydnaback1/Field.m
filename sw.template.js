@@ -14,7 +14,8 @@ const APP_ASSETS = [
   "js/layers.js",
   "js/controls.js",
   "js/routes.js",
-  "js/map.js"
+  "js/map.js",
+  "js/live-location.js"
 ];
 
 self.addEventListener("install", (event) => {

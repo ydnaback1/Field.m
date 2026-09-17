@@ -85,6 +85,10 @@ window.routeDraftLayerWorld = new L.FeatureGroup().addTo(mapWorld);
 // Ephemeral only: profile inspection must never become part of a saved route.
 const routeProfileMarkerUK = new L.FeatureGroup().addTo(mapUK);
 const routeProfileMarkerWorld = new L.FeatureGroup().addTo(mapWorld);
+// Navigation-only overlays. These are deliberately separate from routeLayer so
+// an in-progress walk can never change the saved planned route geometry.
+const navigationLayerUK = new L.FeatureGroup().addTo(mapUK);
+const navigationLayerWorld = new L.FeatureGroup().addTo(mapWorld);
 
 // Base layers
 var ukBaseLayers = getUKBaseLayers(serviceUrl, apiKey);
@@ -178,6 +182,9 @@ let elevationDisclosureOpen = false;
 let notePlacementMode = false;
 let noteDraft = null;
 let selectedAnnotationId = null;
+let navigation = null;
+let navigationSummary = null;
+let navigationWakeLock = null;
 const ROUTE_COLOR_CHOICES = [
   { value: '#ff33da', label: 'Magenta' },
   { value: '#3388ff', label: 'Blue' },
@@ -593,6 +600,234 @@ function bindElevationProfile(context, samples) {
     else if (event.key === 'End') setSample(samples.length - 1);
     else setSample(activeIndex + (event.key === 'ArrowRight' ? 1 : -1));
   });
+}
+
+function getNavigationLayer(mode) { return mode === 'uk' ? navigationLayerUK : navigationLayerWorld; }
+function getNavigationMap(mode) { return mode === 'uk' ? mapUK : mapWorld; }
+
+function formatNavigationDistance(distance) {
+  if (!Number.isFinite(distance) || distance < 0) return '—';
+  if (distance < 1000) return `${Math.round(distance)} m`;
+  return `${(distance / 1000).toLocaleString(undefined, { maximumFractionDigits: distance < 10000 ? 1 : 0 })} km`;
+}
+
+function formatNavigationElapsed(milliseconds) {
+  const minutes = Math.max(0, Math.floor((Number(milliseconds) || 0) / 60000));
+  const hours = Math.floor(minutes / 60);
+  return hours ? `${hours}h${minutes % 60 ? ` ${minutes % 60}m` : ''}` : `${minutes}m`;
+}
+
+function clearNavigationOverlays() {
+  navigationLayerUK.clearLayers();
+  navigationLayerWorld.clearLayers();
+  panelContent.querySelectorAll('.elevation-profile-navigation').forEach(item => item.remove());
+}
+
+function renderNavigationOverlays() {
+  if (!navigation) return;
+  const layer = getNavigationLayer(navigation.mode);
+  layer.clearLayers();
+  const state = navigation.session.getState();
+  const recording = navigation.session.getRecording();
+  const points = recording && recording.points || [];
+  if (points.length > 1) {
+    layer.addLayer(L.polyline(points.map(point => [point.lat, point.lng]), {
+      color: '#386a93', weight: 4, opacity: 0.55, lineCap: 'round', lineJoin: 'round', interactive: false,
+      className: 'navigation-walked-trail'
+    }));
+  }
+  if (state.latestPosition) {
+    layer.addLayer(L.circleMarker([state.latestPosition.lat, state.latestPosition.lng], {
+      radius: 8, color: '#ffffff', weight: 3, fillColor: '#1f6f9c', fillOpacity: 1, interactive: false,
+      className: 'navigation-position-marker'
+    }));
+  }
+}
+
+function updateNavigationProfileIndicator() {
+  if (!navigation || !navigation.match?.elevation) return;
+  const line = panelContent.querySelector('.elevation-profile-navigation');
+  if (!line) return;
+  const fraction = Math.max(0, Math.min(1, navigation.match.elevation.profileProgress || 0));
+  const x = (54 + fraction * 930).toFixed(1);
+  line.setAttribute('x1', x); line.setAttribute('x2', x);
+}
+
+async function requestNavigationWakeLock() {
+  if (!navigation || !navigator.wakeLock?.request || navigationWakeLock) return;
+  try {
+    navigationWakeLock = await navigator.wakeLock.request('screen');
+    navigationWakeLock.addEventListener?.('release', () => { navigationWakeLock = null; });
+  } catch (error) {
+    // Navigation is intentionally usable when wake lock is unavailable.
+  }
+}
+
+function releaseNavigationWakeLock() {
+  const lock = navigationWakeLock;
+  navigationWakeLock = null;
+  if (lock) lock.release().catch(() => {});
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (navigation && document.visibilityState === 'visible') requestNavigationWakeLock();
+});
+
+function updateNavigationPeek() {
+  if (!navigation) {
+    panelRouteToggle.innerHTML = '<i class="fas fa-route" aria-hidden="true"></i><span>Routes</span>';
+    return;
+  }
+  const remaining = navigation.match ? formatNavigationDistance(navigation.match.stabilised.distanceRemaining) : 'Locating…';
+  const time = navigation.match?.remainingTime?.timeStr ? ` · ~${navigation.match.remainingTime.timeStr}` : '';
+  panelRouteToggle.innerHTML = `<i class="fas fa-person-walking" aria-hidden="true"></i><span>${escapeHtml(remaining + time)}</span>`;
+}
+
+function navigationMetricsMarkup() {
+  const recording = navigation && navigation.session.getRecording();
+  const match = navigation && navigation.match;
+  if (!navigation) return '';
+  if (!match) {
+    const error = navigation.session.getState().error;
+    return `<p class="navigation-waiting" role="status">${escapeHtml(error ? (error.type === 'permission-denied' ? 'Location permission was denied.' : 'Waiting for a usable GPS position…') : 'Waiting for a usable GPS position…')}</p>`;
+  }
+  const routeTotal = formatNavigationDistance(match.stabilised.totalDistance);
+  const completed = formatNavigationDistance(match.stabilised.distanceAlong);
+  const remaining = formatNavigationDistance(match.stabilised.distanceRemaining);
+  const time = match.remainingTime?.timeStr ? `~${match.remainingTime.timeStr}` : '—';
+  const elevation = match.elevation;
+  return `<div class="navigation-primary"><strong>${remaining} remaining</strong><span>${time}</span></div>
+    <p class="navigation-progress">${completed} of ${routeTotal} · ${Math.round(match.stabilised.progress * 100)}%</p>
+    <dl class="navigation-session-metrics">
+      <div><dt>Walked</dt><dd>${formatNavigationDistance(recording?.distance || 0)}</dd></div>
+      <div><dt>Elapsed</dt><dd>${formatNavigationElapsed(recording?.elapsed || 0)}</dd></div>
+      ${elevation ? `<div><dt>Matched elevation</dt><dd>${Math.round(elevation.elevation)} m</dd></div><div><dt>Ascent remaining</dt><dd>${Math.round(elevation.remainingAscent)} m</dd></div>` : ''}
+    </dl>
+    ${match.raw.distanceFromRoute >= 25 ? `<p class="navigation-off-route">${formatNavigationDistance(match.raw.distanceFromRoute)} from route</p>` : ''}`;
+}
+
+function refreshNavigationUI() {
+  if (!navigation) return;
+  const metrics = panelContent.querySelector('#navigation-metrics');
+  if (metrics) metrics.innerHTML = navigationMetricsMarkup();
+  const follow = panelContent.querySelector('#navigation-recenter');
+  if (follow) {
+    follow.hidden = navigation.follow;
+    follow.textContent = navigation.follow ? 'Following' : 'Recenter';
+  }
+  renderNavigationOverlays();
+  updateNavigationProfileIndicator();
+  updateNavigationPeek();
+}
+
+function followNavigationPosition() {
+  if (!navigation?.follow || !navigation.session.latestPosition) return;
+  getNavigationMap(navigation.mode).panTo([navigation.session.latestPosition.lat, navigation.session.latestPosition.lng], { animate: true, duration: 0.35 });
+}
+
+function handleNavigationPosition(position) {
+  if (!navigation) return;
+  navigation.match = FieldMapsLiveLocation.matchRouteProgress(navigation.plannedRoute, position, navigation.progressState);
+  navigation.progressState = navigation.match.progressState;
+  followNavigationPosition();
+  refreshNavigationUI();
+}
+
+function startNavigation(context) {
+  if (navigation || !window.FieldMapsLiveLocation) return;
+  if (typeof routeLineCoordinates !== 'function' || routeLineCoordinates(context.route.geojson).length < 2) {
+    routePanelNotice = 'This route needs at least two points before it can be walked.';
+    showRoutePanelContent();
+    return;
+  }
+  const session = FieldMapsLiveLocation.createSession();
+  const receive = session.onLocation;
+  session.onLocation = function(position) {
+    receive.call(session, position);
+    handleNavigationPosition(position);
+  };
+  navigation = {
+    mode: context.mode, index: context.index, plannedRoute: context.route,
+    session, progressState: null, match: null, follow: true
+  };
+  // This starts recording and the shared geolocation watcher exactly once.
+  session.startRecording();
+  requestNavigationWakeLock();
+  panelView = 'navigation';
+  setRoutePanelOpen(true);
+  refreshNavigationUI();
+}
+
+function endNavigation() {
+  if (!navigation) return;
+  const ending = navigation;
+  const recording = ending.session.finishRecording();
+  navigationSummary = { mode: ending.mode, index: ending.index, plannedRoute: ending.plannedRoute, match: ending.match, recording };
+  navigation = null;
+  releaseNavigationWakeLock();
+  clearNavigationOverlays();
+  updateNavigationPeek();
+  panelView = 'navigation-summary';
+  showRoutePanelContent();
+}
+
+function discardNavigationSummary() {
+  navigationSummary = null;
+  panelView = 'details';
+  showRoutePanelContent();
+}
+
+function saveNavigationTrack(name) {
+  const summary = navigationSummary;
+  const points = summary?.recording?.points || [];
+  if (!summary || points.length < 2) return false;
+  const layer = L.geoJSON(FieldMapsLiveLocation.recordingGeoJSON(points));
+  const index = window.saveRouteToList(summary.mode, name, layer);
+  navigationSummary = null;
+  routePanelNotice = 'Walked track saved as a new route.';
+  panelView = 'details';
+  showRoutePanelContent();
+  updateRouteFabLabel();
+  return Number.isInteger(index);
+}
+
+function showNavigationMode() {
+  const route = navigation.plannedRoute;
+  const samples = getRouteElevationSamples(route);
+  panel.classList.remove('library-view', 'library-scroll-view');
+  panel.setAttribute('aria-label', 'Navigation mode');
+  panelContent.className = 'route-detail-content navigation-mode-content';
+  panelContent.innerHTML = `<div class="panel-heading active-route-heading"><div class="panel-eyebrow"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> Navigation mode</div><h2 class="route-title">${escapeHtml(route.name || 'Untitled route')}</h2></div>
+    <div id="navigation-metrics">${navigationMetricsMarkup()}</div>
+    ${samples.length ? `<div class="navigation-profile"><span>Planned route elevation</span>${buildElevationProfile(samples).markup}</div>` : ''}
+    <div class="route-actions-row navigation-actions"><button id="navigation-recenter" class="panel-action" type="button"${navigation.follow ? ' hidden' : ''}>Recenter</button><button id="navigation-end" class="danger-solid" type="button">End walk</button></div>`;
+  panelContent.querySelector('#navigation-recenter').onclick = () => { navigation.follow = true; followNavigationPosition(); refreshNavigationUI(); };
+  panelContent.querySelector('#navigation-end').onclick = endNavigation;
+  if (samples.length && navigation.match?.elevation) {
+    const chart = panelContent.querySelector('.elevation-profile-chart');
+    chart.insertAdjacentHTML('beforeend', '<line class="elevation-profile-navigation" x1="54" x2="54" y1="14" y2="188" />');
+    updateNavigationProfileIndicator();
+  }
+}
+
+function showNavigationSummary() {
+  const summary = navigationSummary;
+  if (!summary) { panelView = 'details'; showRoutePanelContent(); return; }
+  const total = getRouteMetrics(summary.plannedRoute).km;
+  const progress = summary.match ? `${Math.round(summary.match.stabilised.progress * 100)}%` : 'No matched progress';
+  const suggestedName = `${summary.plannedRoute.name || 'Route'} — Walked`;
+  panel.classList.remove('library-view', 'library-scroll-view');
+  panel.setAttribute('aria-label', 'Walk summary');
+  panelContent.className = 'route-detail-content navigation-summary-content';
+  panelContent.innerHTML = `<div class="panel-heading"><div class="panel-eyebrow">Walk complete</div><h2 class="route-title">Session summary</h2></div>
+    <dl class="navigation-session-metrics navigation-summary-metrics"><div><dt>Planned route</dt><dd>${total ? `${total} km` : '—'}</dd></div><div><dt>Progress reached</dt><dd>${progress}</dd></div><div><dt>Walked</dt><dd>${formatNavigationDistance(summary.recording?.distance || 0)}</dd></div><div><dt>Elapsed</dt><dd>${formatNavigationElapsed(summary.recording?.elapsed || 0)}</dd></div><div><dt>Recorded points</dt><dd>${summary.recording?.pointCount || 0}</dd></div></dl>
+    <label class="navigation-save-label" for="walked-track-name">Walked track name</label><input id="walked-track-name" maxlength="100" value="${escapeAttribute(suggestedName)}">
+    <div class="route-actions-row navigation-actions"><button id="save-walked-track" class="primary-action" type="button"${summary.recording?.pointCount >= 2 ? '' : ' disabled'}>Save walked track</button><button id="discard-walked-track" class="panel-action" type="button">Discard walked track</button></div>`;
+  panelContent.querySelector('#save-walked-track').onclick = () => {
+    const name = panelContent.querySelector('#walked-track-name').value.trim();
+    if (name) saveNavigationTrack(name);
+  };
+  panelContent.querySelector('#discard-walked-track').onclick = discardNavigationSummary;
 }
 
 function getShareableRouteName(route) {
@@ -1902,7 +2137,8 @@ function showActiveRouteDetails(context) {
     </div>
     ${routePanelNotice ? `<div class="panel-notice" role="status">${escapeHtml(routePanelNotice)}</div>` : ''}
     <div class="route-actions-row active-route-actions">
-      <button id="edit-route-panel" class="primary-action primary-action-wide" type="button"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit route</span></button>
+      <button id="walk-route-panel" class="primary-action primary-action-wide" type="button"><i class="fa-solid fa-person-walking" aria-hidden="true"></i><span>Walk this route</span></button>
+      <button id="edit-route-panel" class="panel-action" type="button"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit route</span></button>
     </div>
     ${confirmingDelete ? `<div class="route-delete-confirm" role="alert">
       <div><strong>Delete this route?</strong><span>This removes it from this device.</span></div>
@@ -2079,6 +2315,7 @@ function showActiveRouteDetails(context) {
       showRoutePanelContent();
     };
   });
+  panelContent.querySelector('#walk-route-panel').onclick = function() { startNavigation(context); };
   panelContent.querySelector('#edit-route-panel').onclick = function() {
     routePanelNotice = '';
     if (startRoutedEdit(context)) {
@@ -2150,6 +2387,14 @@ function showRoutePanelContent() {
   }
   if (snapPreview) {
     showSnapPreview();
+    return;
+  }
+  if (navigation) {
+    showNavigationMode();
+    return;
+  }
+  if (panelView === 'navigation-summary') {
+    showNavigationSummary();
     return;
   }
   if (drawingMode || editingMode) {
@@ -2460,6 +2705,14 @@ function saveMapState() {
 }
 mapUK.on('moveend zoomend', saveMapState);
 mapWorld.on('moveend zoomend', saveMapState);
+// Leaflet only emits these for direct gestures, so automatic panTo following
+// remains calm while a deliberate pan or zoom hands map control back to the user.
+[mapUK, mapWorld].forEach(map => map.on('dragstart zoomstart', () => {
+  if (navigation && getNavigationMap(navigation.mode) === map) {
+    navigation.follow = false;
+    refreshNavigationUI();
+  }
+}));
 
 // --- Load shared route if present in URL ---
 async function importSharedRoute(sharedRoute) {
