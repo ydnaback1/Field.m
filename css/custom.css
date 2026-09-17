@@ -1322,6 +1322,55 @@ select {
   opacity: 1;
 }
 
+/* Session-only navigation information stays quieter than the saved route. */
+.elevation-profile-navigation {
+  stroke: #1f6f9c;
+  stroke-width: 3;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.navigation-primary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--panel-text);
+}
+
+.navigation-primary strong { font-size: 1.08rem; }
+.navigation-primary span { color: var(--muted-text); font-weight: 750; }
+.navigation-progress, .navigation-waiting, .navigation-off-route { margin: 8px 0 12px; color: var(--muted-text); font-size: 0.88rem; }
+.navigation-off-route { font-size: 0.8rem; }
+
+.navigation-session-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.navigation-session-metrics div {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-hover) 54%, transparent);
+}
+
+.navigation-session-metrics dt { color: var(--muted-text); font-size: 0.72rem; font-weight: 700; }
+.navigation-session-metrics dd { margin: 3px 0 0; font-variant-numeric: tabular-nums; font-size: 0.9rem; font-weight: 760; }
+.navigation-profile { margin: 0 0 14px; }
+.navigation-profile > span, .navigation-save-label { display: block; margin: 0 0 6px; color: var(--muted-text); font-size: 0.78rem; font-weight: 740; }
+.navigation-actions { margin-top: 4px; }
+.navigation-actions > * { flex: 1 1 0; }
+.navigation-summary-metrics { margin-bottom: 16px; }
+.navigation-save-label { margin-top: 6px; }
+#walked-track-name { width: 100%; margin-bottom: 10px; }
+
 .elevation-profile-y-label,
 .elevation-profile-x-label {
   fill: var(--muted-text);
