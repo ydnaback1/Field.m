@@ -17,6 +17,8 @@ vm.runInThisContext(fs.readFileSync('js/live-location.js', 'utf8'), { filename: 
 
 const api = global.FieldMapsLiveLocation;
 const route = { type: 'LineString', coordinates: [[-1, 51], [-0.99, 51], [-0.98, 51]] };
+assert.equal(hasValidRouteCoordinates(route), true);
+assert.equal(hasValidRouteCoordinates({ type: 'LineString', coordinates: [[-1, 51], [Infinity, 51]] }), false);
 const nearStart = api.matchRouteProgress(route, { lat: 51, lng: -0.9998, accuracy: 5, timestamp: 1000 });
 const midpoint = api.matchRouteProgress(route, { lat: 51, lng: -0.99, accuracy: 5, timestamp: 2000 });
 const nearEnd = api.matchRouteProgress(route, { lat: 51, lng: -0.9802, accuracy: 5, timestamp: 3000 });
@@ -71,6 +73,8 @@ const finished = recorder.finishRecording();
 assert.equal(finished.status, 'finished');
 assert.equal(finished.geojson.features[0].geometry.type, 'LineString');
 assert(finished.geojson.features[0].geometry.coordinates.length >= 3);
+assert.deepEqual(finished.geojson.features[0].geometry.coordinates[0], [-1, 51]);
+assert.equal(api.recordingGeoJSON([{ lat: 51, lng: -1 }, { lat: Infinity, lng: -0.999 }]), null);
 assert(finished.distance > beforePause.distance);
 const frozenElapsed = recorder.getRecording().elapsed;
 assert.equal(recorder.getRecording().elapsed, frozenElapsed);

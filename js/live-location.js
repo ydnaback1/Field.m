@@ -163,6 +163,7 @@
   }
 
   function recordingGeoJSON(points) {
+    if (!Array.isArray(points) || points.length < 2 || !points.every(isValidCoordinate)) return null;
     const coordinates = points.map(point => [point.lng, point.lat]);
     return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } }] };
   }

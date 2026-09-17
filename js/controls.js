@@ -107,7 +107,16 @@ function addUKControls(map, baseLayers) {
     labelControl(layerControl, '.leaflet-control-layers-toggle', 'Choose map style');
     map.addControl(new GlobeSwitcherControl({ position: 'topright' }));
     // Route control is handled separately in map.js
-    var locateControl = L.control.locate().addTo(map);
+    // Locate must never choose a new zoom from its accuracy circle.  It is a
+    // one-shot centre action at the user's current zoom; live Track/Walk owns
+    // continuous following separately.
+    var locateControl = L.control.locate({
+        setView: 'once',
+        keepCurrentZoomLevel: true,
+        flyTo: false
+    }).addTo(map);
+    map._fieldMapsLocateControl = locateControl;
+    preventLocateDuringLiveSession(map, locateControl);
     labelControl(locateControl, 'a', 'Find my location');
     createMeasureControl(map, '#FF0080');
     L.control.scale({
@@ -120,7 +129,13 @@ function addUKControls(map, baseLayers) {
 function addWorldControls(map) {
     map.addControl(new GlobeSwitcherControl({ position: 'topright' }));
     // Route control is handled separately in map.js
-    var locateControl = L.control.locate().addTo(map);
+    var locateControl = L.control.locate({
+        setView: 'once',
+        keepCurrentZoomLevel: true,
+        flyTo: false
+    }).addTo(map);
+    map._fieldMapsLocateControl = locateControl;
+    preventLocateDuringLiveSession(map, locateControl);
     labelControl(locateControl, 'a', 'Find my location');
     createMeasureControl(map, '#3388ff');
     L.control.scale({
@@ -129,4 +144,17 @@ function addWorldControls(map) {
         metric: true,
         maxWidth: 200
     }).addTo(map);
+}
+
+function preventLocateDuringLiveSession(map, locateControl) {
+    var container = locateControl.getContainer();
+    if (!container) return;
+    // Capture the click before LocateControl starts its own watch.  A Track or
+    // Walk session already owns the shared watcher and its drawer-aware pan.
+    container.addEventListener('click', function(event) {
+        if (!window.hasFieldMapsLiveLocation || !window.hasFieldMapsLiveLocation()) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        locateControl.stop();
+    }, true);
 }

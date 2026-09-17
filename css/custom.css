@@ -1372,6 +1372,45 @@ select {
 .navigation-save-label { margin-top: 6px; }
 #walked-track-name { width: 100%; margin-bottom: 10px; }
 
+/* Keep the GPS dot crisp while a restrained outer halo provides location feedback. */
+.navigation-position-marker {
+  background: transparent;
+  border: 0;
+}
+
+.navigation-position-marker .navigation-position-dot,
+.navigation-position-marker .navigation-position-halo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.navigation-position-marker .navigation-position-dot {
+  width: 12px;
+  height: 12px;
+  background: #1f6f9c;
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.38);
+}
+
+.navigation-position-marker .navigation-position-halo {
+  width: 18px;
+  height: 18px;
+  background: rgba(31, 111, 156, 0.22);
+  animation: fieldmaps-location-halo 2.1s ease-out infinite;
+}
+
+@keyframes fieldmaps-location-halo {
+  0%, 100% { opacity: 0.24; transform: translate(-50%, -50%) scale(0.9); }
+  55% { opacity: 0.05; transform: translate(-50%, -50%) scale(2.1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navigation-position-marker .navigation-position-halo { animation: none; opacity: 0.14; }
+}
+
 .navigation-elevation {
   margin: 0 0 14px;
   border: 1px solid var(--border-subtle);
