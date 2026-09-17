@@ -1153,6 +1153,16 @@ select {
     700 13px/1 system-ui,
     sans-serif;
 }
+.route-waypoint-marker.is-selected span {
+  background: #d97706;
+  transform: scale(1.12);
+}
+.route-routed-edit-actions {
+  margin-bottom: 10px;
+}
+.route-workflow-action {
+  margin: 0 0 10px;
+}
 
 .route-disclosure {
   border-top: 1px solid var(--border-subtle);
