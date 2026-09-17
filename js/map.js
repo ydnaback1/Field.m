@@ -159,6 +159,9 @@ let editingMode = false;
 let routeCreationMode = 'free';
 let pathDraft = null;
 let snapPreview = null;
+// Routed editing is deliberately separate from the detailed line geometry. The
+// saved route remains the last valid route until a full reroute succeeds.
+let routedEdit = null;
 let sharedRouteImport = null;
 let panelView = 'library';
 let routePanelViewBeforeSettings = 'library';
@@ -1215,6 +1218,160 @@ function renderPathDraft() {
   });
 }
 
+function cloneRouteData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function isOrsRoutedRoute(route) {
+  const routing = route?.routing;
+  return routing?.provider === 'ors' && routing.profile === 'foot-hiking' &&
+    Array.isArray(routing.waypoints) && routing.waypoints.length >= 2;
+}
+
+function renderRoutedEditMarkers() {
+  if (!routedEdit) return;
+  const layer = getDraftLayer(routedEdit.mode);
+  layer.clearLayers();
+  routedEdit.waypoints.forEach(function(waypoint, index) {
+    const marker = L.marker([waypoint[1], waypoint[0]], {
+      draggable: !routedEdit.waiting,
+      icon: L.divIcon({
+        className: `route-waypoint-marker${routedEdit.selectedIndex === index ? ' is-selected' : ''}`,
+        html: `<span>${index + 1}</span>`, iconSize: [32, 32], iconAnchor: [16, 16]
+      })
+    });
+    marker.on('click', function() {
+      if (routedEdit?.waiting) return;
+      routedEdit.selectedIndex = index;
+      renderRoutedEditMarkers();
+      showRoutePanelContent();
+    });
+    marker.on('dragend', function() {
+      if (!routedEdit || routedEdit.waiting) return;
+      const point = marker.getLatLng();
+      const next = routedEdit.waypoints.map(item => item.slice());
+      next[index] = [point.lng, point.lat];
+      rerouteRoutedEdit(next);
+    });
+    layer.addLayer(marker);
+  });
+}
+
+function renderActiveRouteGeometry(mode, route) {
+  const routeLayer = getRouteLayer(mode);
+  routeLayer.clearLayers();
+  const layer = L.geoJSON(route.geojson, { style: window.getRouteStyle(mode, route) });
+  layer.eachLayer(item => routeLayer.addLayer(item));
+  renderRouteAnnotations(mode, route);
+}
+
+function startRoutedEdit(context) {
+  if (!isOrsRoutedRoute(context.route)) return false;
+  routedEdit = {
+    mode: context.mode, index: context.index,
+    original: cloneRouteData(context.route),
+    originalDisplayMode: routeDisplayMode[context.mode],
+    waypoints: cloneRouteData(context.route.routing.waypoints),
+    requestId: 0, waiting: false, error: '', selectedIndex: null, adding: false
+  };
+  clearSteepnessDisplay(context.mode);
+  editingMode = true;
+  drawingMode = false;
+  renderRoutedEditMarkers();
+  return true;
+}
+
+function finishRoutedEdit(cancelled) {
+  if (!routedEdit) return;
+  const edit = routedEdit;
+  edit.requestId++;
+  if (cancelled) {
+    const routes = window.getRouteList(edit.mode);
+    if (routes[edit.index]) {
+      routes[edit.index] = cloneRouteData(edit.original);
+      localStorage.setItem(`routeList_${edit.mode}`, JSON.stringify(routes));
+      renderActiveRouteGeometry(edit.mode, routes[edit.index]);
+      if (edit.originalDisplayMode === 'steepness') showSteepnessDisplay(edit.mode, routes[edit.index]);
+      if (edit.originalDisplayMode === 'elevation') showElevationDisplay(edit.mode, routes[edit.index]);
+    }
+  }
+  getDraftLayer(edit.mode).clearLayers();
+  routedEdit = null;
+  editingMode = false;
+  panelView = 'details';
+  routePanelNotice = cancelled ? 'Route changes discarded.' : 'Route changes saved.';
+  showRoutePanelContent();
+  updateRouteFabLabel();
+}
+
+async function rerouteRoutedEdit(nextWaypoints) {
+  if (!routedEdit || routedEdit.waiting || nextWaypoints.length < 2) return;
+  const edit = routedEdit;
+  const requestId = ++edit.requestId;
+  edit.waiting = true;
+  edit.error = '';
+  edit.adding = false;
+  showRoutePanelContent();
+  try {
+    const geojson = await requestOrsFootHikingRoute(nextWaypoints);
+    if (!routedEdit || routedEdit !== edit || requestId !== edit.requestId) return;
+    const routing = { provider: 'ors', profile: 'foot-hiking', waypoints: cloneRouteData(nextWaypoints) };
+    if (!window.replaceRouteGeometryInList(edit.mode, edit.index, geojson, routing)) throw new Error('Route unavailable');
+    edit.waypoints = cloneRouteData(nextWaypoints);
+    edit.selectedIndex = null;
+    renderActiveRouteGeometry(edit.mode, window.getRouteList(edit.mode)[edit.index]);
+    renderRoutedEditMarkers();
+  } catch (error) {
+    if (!routedEdit || routedEdit !== edit || requestId !== edit.requestId) return;
+    // Do not retain an unaccepted control position after a failed request.
+    edit.error = 'Could not update this walking route. The last valid route is still shown.';
+    renderRoutedEditMarkers();
+  } finally {
+    if (routedEdit === edit && requestId === edit.requestId) {
+      edit.waiting = false;
+      renderRoutedEditMarkers();
+      showRoutePanelContent();
+    }
+  }
+}
+
+function getRouteInsertionIndex(geojson, point) {
+  const coordinates = getRouteLineCoordinates(geojson);
+  if (coordinates.length < 2) return 1;
+  let bestSegment = 0, bestDistance = Infinity;
+  for (let index = 0; index < coordinates.length - 1; index++) {
+    const [ax, ay] = coordinates[index], [bx, by] = coordinates[index + 1];
+    const dx = bx - ax, dy = by - ay;
+    const factor = Math.max(0, Math.min(1, ((point[0] - ax) * dx + (point[1] - ay) * dy) / (dx * dx + dy * dy || 1)));
+    const px = ax + factor * dx, py = ay + factor * dy;
+    const distance = (point[0] - px) ** 2 + (point[1] - py) ** 2;
+    if (distance < bestDistance) { bestDistance = distance; bestSegment = index; }
+  }
+  const total = coordinates.length - 1;
+  const along = bestSegment / total;
+  // Project controls onto the same ordered detailed geometry, then insert after
+  // the last control occurring before the selected route position.
+  const controlPositions = routedEdit.waypoints.map(control => {
+    let nearest = 0, distance = Infinity;
+    coordinates.forEach((coordinate, index) => {
+      const value = (control[0] - coordinate[0]) ** 2 + (control[1] - coordinate[1]) ** 2;
+      if (value < distance) { distance = value; nearest = index; }
+    });
+    return nearest / total;
+  });
+  return Math.max(0, Math.min(routedEdit.waypoints.length, controlPositions.filter(value => value <= along).length));
+}
+
+function handleRoutedEditClick(mode, event) {
+  if (!routedEdit || routedEdit.mode !== mode || !routedEdit.adding || routedEdit.waiting) return;
+  const route = window.getRouteList(mode)[routedEdit.index];
+  if (!route) return;
+  const point = [event.latlng.lng, event.latlng.lat];
+  const next = routedEdit.waypoints.map(item => item.slice());
+  next.splice(getRouteInsertionIndex(route.geojson, point), 0, point);
+  rerouteRoutedEdit(next);
+}
+
 async function requestPathRoute() {
   if (!pathDraft || pathDraft.waypoints.length < 2) return;
   if (!CONFIG.orsApiKey) {
@@ -1318,12 +1475,22 @@ function showSnapPreview() {
 }
 
 function handlePathClick(mode, event) {
-  if (!drawingMode || routeCreationMode !== 'paths' || !pathDraft || pathDraft.mode !== mode) return;
+  if (!drawingMode || routeCreationMode !== 'paths' || !pathDraft || pathDraft.mode !== mode || pathDraft.waiting) return;
   pathDraft.waypoints.push([event.latlng.lng, event.latlng.lat]);
   pathDraft.geojson = null;
   pathDraft.error = '';
   renderPathDraft();
   if (pathDraft.waypoints.length > 1) requestPathRoute();
+  else showRoutePanelContent();
+}
+
+function undoPathWaypoint() {
+  if (!pathDraft || pathDraft.waiting || !pathDraft.waypoints.length) return;
+  pathDraft.waypoints.pop();
+  pathDraft.error = '';
+  if (pathDraft.waypoints.length < 2) pathDraft.geojson = null;
+  renderPathDraft();
+  if (pathDraft.waypoints.length >= 2) requestPathRoute();
   else showRoutePanelContent();
 }
 
@@ -1542,21 +1709,28 @@ function showRouteWorkflow() {
   panel.classList.remove('library-scroll-view');
   panel.setAttribute('aria-label', drawingMode ? 'Draw route' : 'Edit route');
   panelContent.className = 'route-detail-content';
+  const isRoutedEdit = Boolean(!drawingMode && routedEdit);
   panelContent.innerHTML = `
     <div class="panel-heading workflow-heading">
       <div class="panel-eyebrow">${drawingMode ? `New ${getModeLabel(mode)} route` : 'Editing route'}</div>
       <h2 class="route-title">${drawingMode ? (routeCreationMode === 'paths' ? 'Follow paths' : 'Draw your route') : `Edit ${escapeHtml(context?.route.name || 'route')}`}</h2>
-      <p class="panel-hint">${drawingMode ? (routeCreationMode === 'paths' ? 'Tap control waypoints on the map. The route follows hiking paths between them.' : 'Tap the map to add points. Use the map while this sheet stays open.') : 'Move route points on the map, then save or discard your changes.'}</p>
+      <p class="panel-hint">${drawingMode ? (routeCreationMode === 'paths' ? 'Tap control waypoints on the map. The route follows hiking paths between them.' : 'Tap the map to add points. Use the map while this sheet stays open.') : isRoutedEdit ? 'Numbered points control the generated walking route. Drag a point, or select one to remove it.' : 'Move route points on the map, then save or discard your changes.'}</p>
     </div>
     ${drawingMode ? `<div class="route-creation-mode" role="group" aria-label="Route creation mode">
       <button id="follow-paths-mode" class="${routeCreationMode === 'paths' ? 'selected' : ''}" type="button" aria-pressed="${routeCreationMode === 'paths'}">Follow paths</button>
       <button id="draw-freely-mode" class="${routeCreationMode === 'free' ? 'selected' : ''}" type="button" aria-pressed="${routeCreationMode === 'free'}">Draw freely</button>
     </div>` : ''}
-    <div class="workflow-tip"><span>1</span>${drawingMode ? (routeCreationMode === 'paths' ? `${pathDraft?.waypoints.length || 0} waypoint${(pathDraft?.waypoints.length || 0) === 1 ? '' : 's'}${pathDraft?.waiting ? ' · Finding paths…' : ''}` : 'Add at least two points on the map') : 'Drag any point to adjust the route'}</div>
+    <div class="workflow-tip"><span>1</span>${drawingMode ? (routeCreationMode === 'paths' ? `${pathDraft?.waypoints.length || 0} waypoint${(pathDraft?.waypoints.length || 0) === 1 ? '' : 's'}${pathDraft?.waiting ? ' · Finding paths…' : ''}` : 'Add at least two points on the map') : isRoutedEdit ? `${routedEdit.waypoints.length} control waypoint${routedEdit.waypoints.length === 1 ? '' : 's'}${routedEdit.waiting ? ' · Finding paths…' : routedEdit.adding ? ' · Tap the route or map to add a point' : ''}` : 'Drag any point to adjust the route'}</div>
     ${drawingMode && routeCreationMode === 'paths' && pathDraft?.error ? `<p class="route-workflow-error" role="alert">${escapeHtml(pathDraft.error)}</p>` : ''}
+    ${isRoutedEdit && routedEdit.error ? `<p class="route-workflow-error" role="alert">${escapeHtml(routedEdit.error)}</p>` : ''}
+    ${drawingMode && routeCreationMode === 'paths' && pathDraft?.waypoints.length ? '<button id="undo-path-waypoint" class="panel-action route-workflow-action" type="button">Undo last point</button>' : ''}
+    ${isRoutedEdit ? `<div class="route-actions-row route-routed-edit-actions">
+      <button id="add-routed-waypoint" class="panel-action" type="button" ${routedEdit.waiting ? 'disabled' : ''}>Add waypoint</button>
+      <button id="delete-routed-waypoint" class="panel-action" type="button" ${routedEdit.selectedIndex == null || routedEdit.waiting || routedEdit.waypoints.length <= 2 ? 'disabled' : ''}>Remove selected</button>
+    </div>` : ''}
     <div class="route-actions-row">
       <button id="${drawingMode ? 'save-route-panel' : 'save-edit-route-panel'}" class="primary-action primary-action-wide" type="button">
-        <i class="fa-solid fa-check" aria-hidden="true"></i><span>${drawingMode ? 'Finish route' : 'Save changes'}</span>
+        <i class="fa-solid fa-check" aria-hidden="true"></i><span>${drawingMode ? 'Finish route' : 'Done'}</span>
       </button>
       <button id="cancel-route-workflow" class="panel-action" type="button">Cancel</button>
     </div>`;
@@ -1565,6 +1739,23 @@ function showRouteWorkflow() {
     panelContent.querySelector('#follow-paths-mode').onclick = function() { setRouteCreationMode('paths'); };
     panelContent.querySelector('#draw-freely-mode').onclick = function() { setRouteCreationMode('free'); };
   }
+  const undoButton = panelContent.querySelector('#undo-path-waypoint');
+  if (undoButton) undoButton.onclick = undoPathWaypoint;
+  const addWaypointButton = panelContent.querySelector('#add-routed-waypoint');
+  if (addWaypointButton) addWaypointButton.onclick = function() {
+    if (!routedEdit || routedEdit.waiting) return;
+    routedEdit.adding = !routedEdit.adding;
+    routedEdit.selectedIndex = null;
+    renderRoutedEditMarkers();
+    showRoutePanelContent();
+  };
+  const deleteWaypointButton = panelContent.querySelector('#delete-routed-waypoint');
+  if (deleteWaypointButton) deleteWaypointButton.onclick = function() {
+    if (!routedEdit || routedEdit.waiting || routedEdit.selectedIndex == null || routedEdit.waypoints.length <= 2) return;
+    const next = routedEdit.waypoints.map(item => item.slice());
+    next.splice(routedEdit.selectedIndex, 1);
+    rerouteRoutedEdit(next);
+  };
   const finishButton = panelContent.querySelector(drawingMode ? '#save-route-panel' : '#save-edit-route-panel');
   finishButton.onclick = function() {
     if (!activeDrawControl) return;
@@ -1596,6 +1787,8 @@ function showRouteWorkflow() {
       updateRouteFabLabel();
     } else if (drawingMode && activeDrawControl._toolbars?.draw) {
       activeDrawControl._toolbars.draw._modes.polyline.handler.completeShape();
+    } else if (routedEdit) {
+      if (!routedEdit.waiting) finishRoutedEdit(false);
     } else if (editingMode && activeDrawControl._toolbars?.edit) {
       const handler = activeDrawControl._toolbars.edit._modes.edit.handler;
       handler.save();
@@ -1604,6 +1797,10 @@ function showRouteWorkflow() {
   };
 
   panelContent.querySelector('#cancel-route-workflow').onclick = function() {
+    if (routedEdit) {
+      finishRoutedEdit(true);
+      return;
+    }
     if (activeDrawControl && drawingMode && activeDrawControl._toolbars?.draw) {
       activeDrawControl._toolbars.draw._modes.polyline.handler.disable();
     }
@@ -1883,10 +2080,14 @@ function showActiveRouteDetails(context) {
     };
   });
   panelContent.querySelector('#edit-route-panel').onclick = function() {
+    routePanelNotice = '';
+    if (startRoutedEdit(context)) {
+      showRoutePanelContent();
+      return;
+    }
     if (routeDisplayMode[context.mode] !== 'solid') clearSteepnessDisplay(context.mode);
     editingMode = true;
     drawingMode = false;
-    routePanelNotice = '';
     showRoutePanelContent();
     if (activeDrawControl && activeDrawControl._toolbars?.edit) {
       activeDrawControl._toolbars.edit._modes.edit.handler.enable();
@@ -2037,6 +2238,7 @@ function setRoutePanelOpen(isOpen, restoreFocus = false) {
     clearRouteProfileMarker();
     if (!mobilePeek) panelContent.innerHTML = '';
     removeDrawToolbar();
+    if (routedEdit) finishRoutedEdit(true);
     drawingMode = false;
     editingMode = false;
     if (restoreFocus) {
@@ -2242,8 +2444,8 @@ function handleNotePlacement(mode, event) {
 
 mapUK.on('click', function(event) { handleNotePlacement('uk', event); });
 mapWorld.on('click', function(event) { handleNotePlacement('world', event); });
-mapUK.on('click', function(event) { handlePathClick('uk', event); });
-mapWorld.on('click', function(event) { handlePathClick('world', event); });
+mapUK.on('click', function(event) { handlePathClick('uk', event); handleRoutedEditClick('uk', event); });
+mapWorld.on('click', function(event) { handlePathClick('world', event); handleRoutedEditClick('world', event); });
 
 // Save map state for persistence
 function saveMapState() {
