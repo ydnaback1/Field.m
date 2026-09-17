@@ -184,6 +184,9 @@ let noteDraft = null;
 let selectedAnnotationId = null;
 let navigation = null;
 let navigationSummary = null;
+let trackRecording = null;
+let trackSummary = null;
+let confirmingTrackDiscard = false;
 let navigationWakeLock = null;
 let navigationElevationOpen = false;
 const ROUTE_COLOR_CHOICES = [
@@ -634,12 +637,14 @@ function clearNavigationOverlays() {
   panelContent.querySelectorAll('.elevation-profile-navigation').forEach(item => item.remove());
 }
 
-function renderNavigationOverlays() {
-  if (!navigation) return;
-  const layer = getNavigationLayer(navigation.mode);
+function getLiveLocationSession() { return navigation || trackRecording; }
+
+function renderLiveLocationOverlays(live) {
+  if (!live) return;
+  const layer = getNavigationLayer(live.mode);
   layer.clearLayers();
-  const state = navigation.session.getState();
-  const recording = navigation.session.getRecording();
+  const state = live.session.getState();
+  const recording = live.session.getRecording();
   const points = recording && recording.points || [];
   if (points.length > 1) {
     layer.addLayer(L.polyline(points.map(point => [point.lat, point.lng]), {
@@ -655,6 +660,8 @@ function renderNavigationOverlays() {
   }
 }
 
+function renderNavigationOverlays() { renderLiveLocationOverlays(navigation); }
+
 function updateNavigationProfileIndicator() {
   if (!navigation || !navigation.match?.elevation) return;
   const line = panelContent.querySelector('.elevation-profile-navigation');
@@ -665,7 +672,7 @@ function updateNavigationProfileIndicator() {
 }
 
 async function requestNavigationWakeLock() {
-  if (!navigation || !navigator.wakeLock?.request || navigationWakeLock) return;
+  if (!getLiveLocationSession() || !navigator.wakeLock?.request || navigationWakeLock) return;
   try {
     navigationWakeLock = await navigator.wakeLock.request('screen');
     navigationWakeLock.addEventListener?.('release', () => { navigationWakeLock = null; });
@@ -681,10 +688,16 @@ function releaseNavigationWakeLock() {
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (navigation && document.visibilityState === 'visible') requestNavigationWakeLock();
+  if (getLiveLocationSession() && document.visibilityState === 'visible') requestNavigationWakeLock();
 });
 
 function updateNavigationPeek() {
+  if (trackRecording) {
+    const recording = trackRecording.session.getRecording();
+    const status = recording?.status === 'paused' ? 'Paused' : (trackRecording.ready ? 'Recording' : 'Locating');
+    panelRouteToggle.innerHTML = `<i class="fas fa-person-walking" aria-hidden="true"></i><span class="navigation-peek-copy"><span>${escapeHtml(`${status} · ${formatNavigationDistance(recording?.distance || 0)}`)}</span><small>⏱ ${formatNavigationClock(recording?.elapsed || 0)}</small></span>`;
+    return;
+  }
   if (!navigation) {
     panelRouteToggle.innerHTML = '<i class="fas fa-route" aria-hidden="true"></i><span>Routes</span>';
     return;
@@ -732,6 +745,180 @@ function refreshNavigationUI() {
   updateNavigationPeek();
 }
 
+function trackErrorMessage(error) {
+  if (!error) return 'Waiting for a usable GPS position…';
+  if (error.type === 'permission-denied') return 'Location permission was denied. Allow location access and try again.';
+  if (error.type === 'timeout') return 'Location timed out. Keep this screen open and try again.';
+  if (error.type === 'position-unavailable') return 'Location is currently unavailable. Try again when GPS is available.';
+  return error.message || 'Location is unavailable in this browser.';
+}
+
+function trackMetricsMarkup() {
+  const recording = trackRecording?.session.getRecording();
+  const state = trackRecording?.session.getState();
+  if (!trackRecording || !recording) return '';
+  if (!trackRecording.ready) return `<p class="navigation-waiting" role="status">${escapeHtml(trackErrorMessage(state?.error))}</p>`;
+  const stateLabel = recording.status === 'paused' ? 'Paused' : 'Recording';
+  return `<div class="navigation-primary"><strong>${formatNavigationDistance(recording.distance)} recorded</strong><span>${stateLabel}</span></div>
+    <dl class="navigation-session-metrics"><div><dt>Active time</dt><dd class="navigation-elapsed-value">${formatNavigationClock(recording.elapsed)}</dd></div><div><dt>GPS accuracy</dt><dd>${state?.accuracy ? `±${Math.round(state.accuracy)} m` : '—'}</dd></div></dl>`;
+}
+
+function refreshTrackUI() {
+  if (!trackRecording) return;
+  const metrics = panelContent.querySelector('#track-metrics');
+  if (metrics) metrics.innerHTML = trackMetricsMarkup();
+  const recenter = panelContent.querySelector('#track-recenter');
+  if (recenter) recenter.hidden = trackRecording.follow;
+  renderLiveLocationOverlays(trackRecording);
+  updateNavigationPeek();
+}
+
+function refreshTrackTimer() {
+  if (!trackRecording) return;
+  const elapsed = formatNavigationClock(trackRecording.session.getRecording()?.elapsed || 0);
+  panelContent.querySelectorAll('.navigation-elapsed-value').forEach(item => { item.textContent = elapsed; });
+  updateNavigationPeek();
+}
+
+function showTrackPrestart() {
+  panel.classList.remove('library-view', 'library-scroll-view');
+  panel.setAttribute('aria-label', 'Track my route');
+  panelContent.className = 'route-detail-content navigation-mode-content';
+  panelContent.innerHTML = `<div class="panel-navigation"><button id="back-to-library-from-track" class="panel-back" type="button"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Saved routes</button></div>
+    <div class="panel-heading workflow-heading"><div class="panel-eyebrow">New route</div><h2 class="route-title">Track my route</h2><p class="panel-hint">Record a walk directly from your GPS location. Nothing is saved until you finish and save it.</p></div>
+    <div class="route-actions-row navigation-actions"><button id="start-track-recording" class="primary-action" type="button"><i class="fa-solid fa-play" aria-hidden="true"></i> Start recording</button></div>`;
+  panelContent.querySelector('#back-to-library-from-track').onclick = () => { panelView = 'library'; showRoutePanelContent(); };
+  panelContent.querySelector('#start-track-recording').onclick = startTrackRecording;
+}
+
+function startTrackRecording() {
+  if (trackRecording || navigation || !window.FieldMapsLiveLocation) {
+    routePanelNotice = navigation ? 'Finish or discard the active walk before starting a tracked route.' : 'A recording is already active.';
+    panelView = 'library';
+    showRoutePanelContent();
+    return;
+  }
+  const session = FieldMapsLiveLocation.createSession();
+  const receive = session.onLocation;
+  session.onLocation = function(position) {
+    receive.call(session, position);
+    if (!trackRecording) return;
+    trackRecording.ready = true;
+    followNavigationPosition();
+    refreshTrackUI();
+  };
+  const receiveError = session.onLocationError;
+  session.onLocationError = function(error) {
+    receiveError.call(session, error);
+    refreshTrackUI();
+  };
+  trackRecording = { mode: window.currentMode || 'uk', session, follow: true, ready: false, timerId: null };
+  session.startRecording();
+  requestNavigationWakeLock();
+  startNavigationTimerFor(trackRecording, refreshTrackTimer);
+  panelView = 'track-recording';
+  setRoutePanelOpen(true);
+  refreshTrackUI();
+}
+
+function startNavigationTimerFor(live, refresh) {
+  if (!live || live.timerId) return;
+  live.timerId = window.setInterval(refresh, 1000);
+  refresh();
+}
+
+function pauseTrackRecording() { if (trackRecording) { trackRecording.session.pauseRecording(); refreshTrackUI(); } }
+function resumeTrackRecording() { if (trackRecording) { trackRecording.session.resumeRecording(); requestNavigationWakeLock(); refreshTrackUI(); } }
+
+function finishTrackRecording() {
+  if (!trackRecording) return;
+  const ending = trackRecording;
+  stopNavigationTimer(ending);
+  const recording = ending.session.finishRecording();
+  trackSummary = { mode: ending.mode, session: ending.session, recording };
+  confirmingTrackDiscard = false;
+  trackRecording = null;
+  releaseNavigationWakeLock();
+  clearNavigationOverlays();
+  panelView = 'track-summary';
+  showRoutePanelContent();
+}
+
+function resumeTrackSummary() {
+  if (!trackSummary) return;
+  const summary = trackSummary;
+  trackSummary = null;
+  confirmingTrackDiscard = false;
+  trackRecording = { mode: summary.mode, session: summary.session, follow: true, ready: Boolean(summary.session.getState().latestPosition), timerId: null };
+  summary.session.resumeFinishedRecording();
+  requestNavigationWakeLock();
+  startNavigationTimerFor(trackRecording, refreshTrackTimer);
+  panelView = 'track-recording';
+  showRoutePanelContent();
+}
+
+function discardTrackSummary() {
+  if (!trackSummary) return;
+  trackSummary.session.cancelRecording();
+  trackSummary = null;
+  confirmingTrackDiscard = false;
+  clearNavigationOverlays();
+  releaseNavigationWakeLock();
+  panelView = 'library';
+  showRoutePanelContent();
+}
+
+function saveTrackedRoute() {
+  const summary = trackSummary;
+  if (!summary || summary.recording.pointCount < 2) return;
+  const layer = L.geoJSON(FieldMapsLiveLocation.recordingGeoJSON(summary.recording.points));
+  const targetLayer = summary.mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
+  const notesLayer = summary.mode === 'uk' ? window.routeNotesLayerUK : window.routeNotesLayerWorld;
+  targetLayer.clearLayers(); notesLayer.clearLayers();
+  window.currentRouteIndex[summary.mode] = window.saveRouteToList(summary.mode, 'Recorded walk', layer);
+  window.applyRouteStyle(layer, summary.mode, window.getRouteList(summary.mode)[window.currentRouteIndex[summary.mode]]);
+  layer.eachLayer(item => targetLayer.addLayer(item));
+  trackSummary = null;
+  renamingRoute = true;
+  routePanelNotice = '';
+  panelView = 'details';
+  window.updateRouteListUI(summary.mode);
+  showRoutePanelContent();
+  updateRouteFabLabel();
+}
+
+function showTrackRecording() {
+  panel.classList.remove('library-view', 'library-scroll-view');
+  panel.setAttribute('aria-label', 'Track my route');
+  panelContent.className = 'route-detail-content navigation-mode-content';
+  const recording = trackRecording.session.getRecording();
+  panelContent.innerHTML = `<div class="panel-heading active-route-heading"><div class="panel-eyebrow"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> Track my route</div><h2 class="route-title">${recording.status === 'paused' ? 'Recording paused' : (trackRecording.ready ? 'Recording' : 'Starting recording')}</h2></div><div id="track-metrics">${trackMetricsMarkup()}</div>
+    <div class="route-actions-row navigation-actions"><button id="track-recenter" class="panel-action" type="button"${trackRecording.follow ? ' hidden' : ''}>Recenter</button><button id="track-pause" class="panel-action" type="button">${recording.status === 'paused' ? 'Resume' : 'Pause'}</button><button id="track-finish" class="danger-solid" type="button">Finish</button></div>`;
+  panelContent.querySelector('#track-recenter').onclick = () => { trackRecording.follow = true; followNavigationPosition(); refreshTrackUI(); };
+  panelContent.querySelector('#track-pause').onclick = () => recording.status === 'paused' ? resumeTrackRecording() : pauseTrackRecording();
+  panelContent.querySelector('#track-finish').onclick = finishTrackRecording;
+}
+
+function showTrackSummary() {
+  const summary = trackSummary;
+  if (!summary) { panelView = 'library'; showRoutePanelContent(); return; }
+  const valid = summary.recording.pointCount >= 2;
+  panel.classList.remove('library-view', 'library-scroll-view');
+  panel.setAttribute('aria-label', 'Recorded route summary');
+  panelContent.className = 'route-detail-content navigation-summary-content';
+  panelContent.innerHTML = `<div class="panel-heading"><div class="panel-eyebrow">Recording complete</div><h2 class="route-title">Route summary</h2></div><dl class="navigation-session-metrics navigation-summary-metrics"><div><dt>Recorded</dt><dd>${formatNavigationDistance(summary.recording.distance)}</dd></div><div><dt>Active time</dt><dd>${formatNavigationClock(summary.recording.elapsed)}</dd></div><div><dt>Recorded points</dt><dd>${summary.recording.pointCount}</dd></div></dl>${valid ? '' : '<p class="navigation-waiting" role="status">At least two accepted GPS positions are needed to save a route. Resume recording or discard it.</p>'}${confirmingTrackDiscard ? '<div class="route-delete-confirm" role="alert"><div><strong>Discard this recording?</strong><span>This cannot be recovered after leaving this screen.</span></div><div class="route-actions-row"><button id="confirm-discard-tracked-route" class="danger-solid" type="button">Discard recording</button><button id="cancel-discard-tracked-route" class="panel-action" type="button">Keep recording</button></div></div>' : '<div class="route-actions-row navigation-actions"><button id="save-tracked-route" class="primary-action" type="button"' + (valid ? '' : ' disabled') + '>Save route</button><button id="resume-tracked-route" class="panel-action" type="button">Resume recording</button><button id="discard-tracked-route" class="danger-solid" type="button">Discard</button></div>'}`;
+  const save = panelContent.querySelector('#save-tracked-route');
+  if (save) save.onclick = saveTrackedRoute;
+  const resume = panelContent.querySelector('#resume-tracked-route');
+  if (resume) resume.onclick = resumeTrackSummary;
+  const discard = panelContent.querySelector('#discard-tracked-route');
+  if (discard) discard.onclick = () => { confirmingTrackDiscard = true; showTrackSummary(); };
+  const confirmDiscard = panelContent.querySelector('#confirm-discard-tracked-route');
+  if (confirmDiscard) confirmDiscard.onclick = discardTrackSummary;
+  const cancelDiscard = panelContent.querySelector('#cancel-discard-tracked-route');
+  if (cancelDiscard) cancelDiscard.onclick = () => { confirmingTrackDiscard = false; showTrackSummary(); };
+}
+
 function refreshNavigationTimer() {
   if (!navigation) return;
   const elapsed = formatNavigationClock(navigation.session.getRecording()?.elapsed || 0);
@@ -740,9 +927,7 @@ function refreshNavigationTimer() {
 }
 
 function startNavigationTimer() {
-  if (!navigation || navigation.timerId) return;
-  navigation.timerId = window.setInterval(refreshNavigationTimer, 1000);
-  refreshNavigationTimer();
+  startNavigationTimerFor(navigation, refreshNavigationTimer);
 }
 
 function stopNavigationTimer(session) {
@@ -763,17 +948,18 @@ function getNavigationUsableMapPoint(mode) {
 }
 
 function followNavigationPosition() {
-  if (!navigation?.follow || !navigation.session.latestPosition) return;
-  const map = getNavigationMap(navigation.mode);
-  const current = map.latLngToContainerPoint([navigation.session.latestPosition.lat, navigation.session.latestPosition.lng]);
-  const target = getNavigationUsableMapPoint(navigation.mode);
+  const live = getLiveLocationSession();
+  if (!live?.follow || !live.session.latestPosition) return;
+  const map = getNavigationMap(live.mode);
+  const current = map.latLngToContainerPoint([live.session.latestPosition.lat, live.session.latestPosition.lng]);
+  const target = getNavigationUsableMapPoint(live.mode);
   const delta = current.subtract(target);
   if (Math.abs(delta.x) < 12 && Math.abs(delta.y) < 12) return;
   map.panBy(delta, { animate: true, duration: 0.25, easeLinearity: 0.35, noMoveStart: true });
 }
 
 function refreshNavigationMapPosition() {
-  if (!navigation?.follow) return;
+  if (!getLiveLocationSession()?.follow) return;
   window.requestAnimationFrame(followNavigationPosition);
   window.setTimeout(followNavigationPosition, 230);
 }
@@ -788,6 +974,11 @@ function handleNavigationPosition(position) {
 
 function startNavigation(context) {
   if (navigation || !window.FieldMapsLiveLocation) return;
+  if (trackRecording || trackSummary) {
+    routePanelNotice = 'Finish, save, or discard the tracked route before starting Navigation Mode.';
+    showRoutePanelContent();
+    return;
+  }
   if (typeof routeLineCoordinates !== 'function' || routeLineCoordinates(context.route.geojson).length < 2) {
     routePanelNotice = 'This route needs at least two points before it can be walked.';
     showRoutePanelContent();
@@ -2001,8 +2192,29 @@ function showRouteLibrary() {
       showRoutePanelContent();
     };
   });
-  panelContent.querySelector('#add-route-panel').onclick = startRouteDrawing;
+  panelContent.querySelector('#add-route-panel').onclick = openRouteCreationOptions;
   renderRouteLibraryResults();
+}
+
+function openRouteCreationOptions() {
+  if (navigation || trackRecording || trackSummary) {
+    routePanelNotice = 'Finish, save, or discard the active recording before creating another route.';
+    showRoutePanelContent();
+    return;
+  }
+  panelView = 'create-route';
+  showRoutePanelContent();
+}
+
+function showRouteCreationOptions() {
+  const mode = window.currentMode || 'uk';
+  panel.classList.remove('library-view', 'library-scroll-view');
+  panel.setAttribute('aria-label', 'Create a route');
+  panelContent.className = 'route-detail-content';
+  panelContent.innerHTML = `<div class="panel-navigation"><button id="back-to-library-from-create" class="panel-back" type="button"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Saved routes</button></div><div class="panel-heading workflow-heading"><div class="panel-eyebrow">New ${getModeLabel(mode)} route</div><h2 class="route-title">Create a route</h2><p class="panel-hint">Choose whether to plan a route on the map or record a walk as you go.</p></div><div class="route-creation-options"><button id="create-planned-route" class="secondary-action" type="button"><i class="fa-solid fa-pen-ruler" aria-hidden="true"></i><span><strong>Plan a route</strong><small>Follow paths or draw freely</small></span></button><button id="create-tracked-route" class="primary-action" type="button"><i class="fa-solid fa-person-walking" aria-hidden="true"></i><span><strong>Track my route</strong><small>Record a walk from GPS</small></span></button></div>`;
+  panelContent.querySelector('#back-to-library-from-create').onclick = () => { panelView = 'library'; showRoutePanelContent(); };
+  panelContent.querySelector('#create-planned-route').onclick = startRouteDrawing;
+  panelContent.querySelector('#create-tracked-route').onclick = () => { panelView = 'track-prestart'; showRoutePanelContent(); };
 }
 
 function showRouteWorkflow() {
@@ -2316,7 +2528,7 @@ function showActiveRouteDetails(context) {
   const addRouteButton = panelContent.querySelector('#add-route-panel');
   const addNoteButton = panelContent.querySelector('#add-note-panel');
   const elevationDisclosure = panelContent.querySelector('.route-elevation');
-  if (addRouteButton) addRouteButton.onclick = startRouteDrawing;
+  if (addRouteButton) addRouteButton.onclick = openRouteCreationOptions;
   if (addNoteButton) addNoteButton.onclick = startNotePlacement;
   if (elevationDisclosure) elevationDisclosure.ontoggle = function() {
     elevationDisclosureOpen = elevationDisclosure.open;
@@ -2461,8 +2673,24 @@ function showRoutePanelContent() {
     showNavigationMode();
     return;
   }
+  if (trackRecording) {
+    showTrackRecording();
+    return;
+  }
   if (panelView === 'navigation-summary') {
     showNavigationSummary();
+    return;
+  }
+  if (panelView === 'track-summary') {
+    showTrackSummary();
+    return;
+  }
+  if (panelView === 'track-prestart') {
+    showTrackPrestart();
+    return;
+  }
+  if (panelView === 'create-route') {
+    showRouteCreationOptions();
     return;
   }
   if (drawingMode || editingMode) {
@@ -2808,6 +3036,10 @@ mapWorld.on('moveend zoomend', saveMapState);
   if (navigation && getNavigationMap(navigation.mode) === map) {
     navigation.follow = false;
     refreshNavigationUI();
+  }
+  if (trackRecording && getNavigationMap(trackRecording.mode) === map) {
+    trackRecording.follow = false;
+    refreshTrackUI();
   }
 }));
 

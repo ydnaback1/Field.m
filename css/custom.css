@@ -1401,6 +1401,12 @@ select {
 .navigation-peek-copy { display: grid; gap: 1px; text-align: left; line-height: 1.15; }
 .navigation-peek-copy small { color: var(--muted-text); font-size: 0.72rem; font-weight: 700; }
 
+.route-creation-options { display: grid; gap: 10px; }
+.route-creation-options button { min-height: 62px; justify-content: flex-start; text-align: left; }
+.route-creation-options button > span { display: grid; gap: 2px; }
+.route-creation-options small { color: var(--muted-text); font-size: 0.76rem; font-weight: 650; }
+.route-creation-options .primary-action small { color: color-mix(in srgb, currentColor 72%, transparent); }
+
 #bottom-panel.route-name-keyboard-visible #panel-content { overscroll-behavior: contain; }
 #bottom-panel.route-name-keyboard-visible .rename-route-form .route-actions-row {
   position: sticky;

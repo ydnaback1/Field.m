@@ -229,17 +229,26 @@
       },
       onLocationError(error) { this.error = error; },
       startRecording() {
-        this.recording = { status: 'recording', points: [], distance: 0, startTime: Date.now(), pausedAt: null, pausedDuration: 0, pendingResume: false };
+        this.recording = { status: 'recording', points: [], distance: 0, startTime: Date.now(), pausedAt: null, finishedAt: null, pausedDuration: 0, pendingResume: false };
         this.start();
         return this.getRecording();
       },
       pauseRecording() { if (this.recording && this.recording.status === 'recording') { this.recording.status = 'paused'; this.recording.pausedAt = Date.now(); } return this.getRecording(); },
       resumeRecording() { if (this.recording && this.recording.status === 'paused') { this.recording.pausedDuration += Date.now() - this.recording.pausedAt; this.recording.pausedAt = null; this.recording.pendingResume = true; this.recording.status = 'recording'; } return this.getRecording(); },
-      finishRecording() { if (!this.recording) return null; const result = this.getRecording(); result.status = 'finished'; result.geojson = recordingGeoJSON(this.recording.points); this.recording.status = 'finished'; this.stop(); return result; },
+      finishRecording() { if (!this.recording) return null; this.recording.finishedAt = Date.now(); const result = this.getRecording(); result.status = 'finished'; result.geojson = recordingGeoJSON(this.recording.points); this.recording.status = 'finished'; this.stop(); return result; },
+      resumeFinishedRecording() {
+        if (!this.recording || this.recording.status !== 'finished') return this.getRecording();
+        this.recording.pausedDuration += Date.now() - this.recording.finishedAt;
+        this.recording.finishedAt = null;
+        this.recording.pendingResume = true;
+        this.recording.status = 'recording';
+        this.start();
+        return this.getRecording();
+      },
       cancelRecording() { this.recording = null; this.stop(); },
       getRecording() {
         if (!this.recording) return null;
-        const now = this.recording.pausedAt || Date.now();
+        const now = this.recording.pausedAt || this.recording.finishedAt || Date.now();
         return { status: this.recording.status, points: this.recording.points.slice(), pointCount: this.recording.points.length, distance: this.recording.distance, startTime: this.recording.startTime, elapsed: Math.max(0, now - this.recording.startTime - this.recording.pausedDuration) };
       },
       getState() { return { active: this.active, latestPosition: this.latestPosition, accuracy: this.latestPosition && this.latestPosition.accuracy, error: this.error || manager.error }; }
