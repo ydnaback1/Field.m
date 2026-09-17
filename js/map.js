@@ -185,6 +185,7 @@ let selectedAnnotationId = null;
 let navigation = null;
 let navigationSummary = null;
 let navigationWakeLock = null;
+let navigationElevationOpen = false;
 const ROUTE_COLOR_CHOICES = [
   { value: '#ff33da', label: 'Magenta' },
   { value: '#3388ff', label: 'Blue' },
@@ -617,6 +618,16 @@ function formatNavigationElapsed(milliseconds) {
   return hours ? `${hours}h${minutes % 60 ? ` ${minutes % 60}m` : ''}` : `${minutes}m`;
 }
 
+function formatNavigationClock(milliseconds) {
+  const seconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+    : `${minutes}:${String(remainder).padStart(2, '0')}`;
+}
+
 function clearNavigationOverlays() {
   navigationLayerUK.clearLayers();
   navigationLayerWorld.clearLayers();
@@ -680,7 +691,8 @@ function updateNavigationPeek() {
   }
   const remaining = navigation.match ? formatNavigationDistance(navigation.match.stabilised.distanceRemaining) : 'Locating…';
   const time = navigation.match?.remainingTime?.timeStr ? ` · ~${navigation.match.remainingTime.timeStr}` : '';
-  panelRouteToggle.innerHTML = `<i class="fas fa-person-walking" aria-hidden="true"></i><span>${escapeHtml(remaining + time)}</span>`;
+  const elapsed = formatNavigationClock(navigation.session.getRecording()?.elapsed || 0);
+  panelRouteToggle.innerHTML = `<i class="fas fa-person-walking" aria-hidden="true"></i><span class="navigation-peek-copy"><span>${escapeHtml(remaining + time)}</span><small>⏱ ${elapsed}</small></span>`;
 }
 
 function navigationMetricsMarkup() {
@@ -700,7 +712,7 @@ function navigationMetricsMarkup() {
     <p class="navigation-progress">${completed} of ${routeTotal} · ${Math.round(match.stabilised.progress * 100)}%</p>
     <dl class="navigation-session-metrics">
       <div><dt>Walked</dt><dd>${formatNavigationDistance(recording?.distance || 0)}</dd></div>
-      <div><dt>Elapsed</dt><dd>${formatNavigationElapsed(recording?.elapsed || 0)}</dd></div>
+      <div><dt>Elapsed</dt><dd class="navigation-elapsed-value">${formatNavigationClock(recording?.elapsed || 0)}</dd></div>
       ${elevation ? `<div><dt>Matched elevation</dt><dd>${Math.round(elevation.elevation)} m</dd></div><div><dt>Ascent remaining</dt><dd>${Math.round(elevation.remainingAscent)} m</dd></div>` : ''}
     </dl>
     ${match.raw.distanceFromRoute >= 25 ? `<p class="navigation-off-route">${formatNavigationDistance(match.raw.distanceFromRoute)} from route</p>` : ''}`;
@@ -720,9 +732,50 @@ function refreshNavigationUI() {
   updateNavigationPeek();
 }
 
+function refreshNavigationTimer() {
+  if (!navigation) return;
+  const elapsed = formatNavigationClock(navigation.session.getRecording()?.elapsed || 0);
+  panelContent.querySelectorAll('.navigation-elapsed-value').forEach(item => { item.textContent = elapsed; });
+  updateNavigationPeek();
+}
+
+function startNavigationTimer() {
+  if (!navigation || navigation.timerId) return;
+  navigation.timerId = window.setInterval(refreshNavigationTimer, 1000);
+  refreshNavigationTimer();
+}
+
+function stopNavigationTimer(session) {
+  if (session?.timerId) window.clearInterval(session.timerId);
+  if (session) session.timerId = null;
+}
+
+function getNavigationUsableMapPoint(mode) {
+  const map = getNavigationMap(mode);
+  const container = map.getContainer();
+  const mapRect = container.getBoundingClientRect();
+  let visibleBottom = mapRect.bottom;
+  if (isMobileDrawerLayout()) {
+    const drawerRect = panel.getBoundingClientRect();
+    if (drawerRect.top > mapRect.top && drawerRect.top < mapRect.bottom) visibleBottom = drawerRect.top;
+  }
+  return L.point(mapRect.width / 2, Math.max(0, (visibleBottom - mapRect.top) / 2));
+}
+
 function followNavigationPosition() {
   if (!navigation?.follow || !navigation.session.latestPosition) return;
-  getNavigationMap(navigation.mode).panTo([navigation.session.latestPosition.lat, navigation.session.latestPosition.lng], { animate: true, duration: 0.35 });
+  const map = getNavigationMap(navigation.mode);
+  const current = map.latLngToContainerPoint([navigation.session.latestPosition.lat, navigation.session.latestPosition.lng]);
+  const target = getNavigationUsableMapPoint(navigation.mode);
+  const delta = current.subtract(target);
+  if (Math.abs(delta.x) < 12 && Math.abs(delta.y) < 12) return;
+  map.panBy(delta, { animate: true, duration: 0.25, easeLinearity: 0.35, noMoveStart: true });
+}
+
+function refreshNavigationMapPosition() {
+  if (!navigation?.follow) return;
+  window.requestAnimationFrame(followNavigationPosition);
+  window.setTimeout(followNavigationPosition, 230);
 }
 
 function handleNavigationPosition(position) {
@@ -748,11 +801,13 @@ function startNavigation(context) {
   };
   navigation = {
     mode: context.mode, index: context.index, plannedRoute: context.route,
-    session, progressState: null, match: null, follow: true
+    session, progressState: null, match: null, follow: true, timerId: null
   };
   // This starts recording and the shared geolocation watcher exactly once.
   session.startRecording();
   requestNavigationWakeLock();
+  navigationElevationOpen = false;
+  if (session.getState().active) startNavigationTimer();
   panelView = 'navigation';
   setRoutePanelOpen(true);
   refreshNavigationUI();
@@ -761,6 +816,7 @@ function startNavigation(context) {
 function endNavigation() {
   if (!navigation) return;
   const ending = navigation;
+  stopNavigationTimer(ending);
   const recording = ending.session.finishRecording();
   navigationSummary = { mode: ending.mode, index: ending.index, plannedRoute: ending.plannedRoute, match: ending.match, recording };
   navigation = null;
@@ -799,11 +855,13 @@ function showNavigationMode() {
   panelContent.className = 'route-detail-content navigation-mode-content';
   panelContent.innerHTML = `<div class="panel-heading active-route-heading"><div class="panel-eyebrow"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> Navigation mode</div><h2 class="route-title">${escapeHtml(route.name || 'Untitled route')}</h2></div>
     <div id="navigation-metrics">${navigationMetricsMarkup()}</div>
-    ${samples.length ? `<div class="navigation-profile"><span>Planned route elevation</span>${buildElevationProfile(samples).markup}</div>` : ''}
+    ${samples.length ? `<details class="navigation-elevation"${navigationElevationOpen ? ' open' : ''}><summary><span>Elevation</span><small>${navigation.match?.elevation ? `${Math.round(navigation.match.elevation.elevation)} m · ${Math.round(navigation.match.elevation.remainingAscent)} m up` : 'Available'}</small><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary><div class="navigation-profile">${buildElevationProfile(samples).markup}</div></details>` : ''}
     <div class="route-actions-row navigation-actions"><button id="navigation-recenter" class="panel-action" type="button"${navigation.follow ? ' hidden' : ''}>Recenter</button><button id="navigation-end" class="danger-solid" type="button">End walk</button></div>`;
   panelContent.querySelector('#navigation-recenter').onclick = () => { navigation.follow = true; followNavigationPosition(); refreshNavigationUI(); };
   panelContent.querySelector('#navigation-end').onclick = endNavigation;
-  if (samples.length && navigation.match?.elevation) {
+  const elevationDisclosure = panelContent.querySelector('.navigation-elevation');
+  if (elevationDisclosure) elevationDisclosure.ontoggle = () => { navigationElevationOpen = elevationDisclosure.open; refreshNavigationMapPosition(); };
+  if (samples.length && navigationElevationOpen && navigation.match?.elevation) {
     const chart = panelContent.querySelector('.elevation-profile-chart');
     chart.insertAdjacentHTML('beforeend', '<line class="elevation-profile-navigation" x1="54" x2="54" y1="14" y2="188" />');
     updateNavigationProfileIndicator();
@@ -820,7 +878,7 @@ function showNavigationSummary() {
   panel.setAttribute('aria-label', 'Walk summary');
   panelContent.className = 'route-detail-content navigation-summary-content';
   panelContent.innerHTML = `<div class="panel-heading"><div class="panel-eyebrow">Walk complete</div><h2 class="route-title">Session summary</h2></div>
-    <dl class="navigation-session-metrics navigation-summary-metrics"><div><dt>Planned route</dt><dd>${total ? `${total} km` : '—'}</dd></div><div><dt>Progress reached</dt><dd>${progress}</dd></div><div><dt>Walked</dt><dd>${formatNavigationDistance(summary.recording?.distance || 0)}</dd></div><div><dt>Elapsed</dt><dd>${formatNavigationElapsed(summary.recording?.elapsed || 0)}</dd></div><div><dt>Recorded points</dt><dd>${summary.recording?.pointCount || 0}</dd></div></dl>
+    <dl class="navigation-session-metrics navigation-summary-metrics"><div><dt>Planned route</dt><dd>${total ? `${total} km` : '—'}</dd></div><div><dt>Progress reached</dt><dd>${progress}</dd></div><div><dt>Walked</dt><dd>${formatNavigationDistance(summary.recording?.distance || 0)}</dd></div><div><dt>Elapsed</dt><dd>${formatNavigationClock(summary.recording?.elapsed || 0)}</dd></div><div><dt>Recorded points</dt><dd>${summary.recording?.pointCount || 0}</dd></div></dl>
     <label class="navigation-save-label" for="walked-track-name">Walked track name</label><input id="walked-track-name" maxlength="100" value="${escapeAttribute(suggestedName)}">
     <div class="route-actions-row navigation-actions"><button id="save-walked-track" class="primary-action" type="button"${summary.recording?.pointCount >= 2 ? '' : ' disabled'}>Save walked track</button><button id="discard-walked-track" class="panel-action" type="button">Discard walked track</button></div>`;
   panelContent.querySelector('#save-walked-track').onclick = () => {
@@ -1345,6 +1403,7 @@ function showRouteBackup() {
 function resetRouteNameKeyboardLayout() {
   panel.classList.remove('route-name-keyboard-visible');
   panel.style.removeProperty('--keyboard-panel-offset');
+  panel.style.removeProperty('--keyboard-visible-height');
 }
 
 function keepRouteNameVisible() {
@@ -1356,14 +1415,23 @@ function keepRouteNameVisible() {
   const touchViewport = window.matchMedia?.('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
   const viewport = window.visualViewport;
   if (!touchViewport || !viewport) return;
+  const form = panelContent.querySelector('#rename-route-form');
+  const actionRow = form?.querySelector('.route-actions-row');
   const inputBounds = input.getBoundingClientRect();
   const visibleBottom = viewport.offsetTop + viewport.height - 16;
-  const currentOffset = Number.parseFloat(panel.style.getPropertyValue('--keyboard-panel-offset')) || 0;
-  const offset = Math.max(0, Math.ceil(currentOffset + inputBounds.bottom - visibleBottom));
-  if (offset) {
-    panel.style.setProperty('--keyboard-panel-offset', `${offset}px`);
+  const keyboardInset = Math.max(0, Math.ceil(window.innerHeight - (viewport.offsetTop + viewport.height)));
+  const actionBottom = actionRow?.getBoundingClientRect().bottom || inputBounds.bottom;
+  const needsKeyboardLayout = keyboardInset > 0 || actionBottom > visibleBottom;
+  if (needsKeyboardLayout) {
+    panel.style.setProperty('--keyboard-panel-offset', `${keyboardInset}px`);
+    panel.style.setProperty('--keyboard-visible-height', `${Math.max(180, Math.floor(viewport.height - viewport.offsetTop - 8))}px`);
     panel.classList.add('route-name-keyboard-visible');
-    input.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+    window.requestAnimationFrame(() => {
+      const row = form?.querySelector('.route-actions-row');
+      const rowBottom = row?.getBoundingClientRect().bottom || input.getBoundingClientRect().bottom;
+      if (rowBottom > visibleBottom) panelContent.scrollTop += rowBottom - visibleBottom;
+      input.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+    });
   } else {
     resetRouteNameKeyboardLayout();
   }
@@ -2491,6 +2559,7 @@ function setRoutePanelOpen(isOpen, restoreFocus = false) {
       restoreTarget.focus({ preventScroll: true });
     }
   }
+  refreshNavigationMapPosition();
 }
 
 function syncRoutePanelLayout() {
@@ -2501,10 +2570,11 @@ function syncRoutePanelLayout() {
   panel.setAttribute('aria-hidden', String(!panel.classList.contains('open') && !mobilePeek));
   panel.inert = !panel.classList.contains('open') && !mobilePeek;
   updateDesktopMapControlOffset();
+  refreshNavigationMapPosition();
 }
 
 window.matchMedia('(max-width: 600px)').addEventListener('change', syncRoutePanelLayout);
-window.addEventListener('resize', updateDesktopMapControlOffset);
+window.addEventListener('resize', () => { updateDesktopMapControlOffset(); refreshNavigationMapPosition(); });
 
 fab.onclick = function() {
   if (panel.classList.contains('open') && panelView !== 'settings' && panelView !== 'backup') {
@@ -2529,6 +2599,8 @@ panelClose.onclick = function() {
 let panelDragStartY = null;
 let panelDragStartOpen = false;
 let panelTopbarDragged = false;
+let panelTopbarHandledTap = false;
+let panelTopbarPointerId = null;
 
 function getMobileDrawerCollapseOffset() {
   const peekHeight = 58 + (Number.parseFloat(getComputedStyle(panel).getPropertyValue('padding-bottom')) || 0);
@@ -2571,6 +2643,8 @@ panelTopbar.addEventListener('pointerdown', function(event) {
   panelDragStartY = event.clientY;
   panelDragStartOpen = panel.classList.contains('open');
   panelTopbarDragged = false;
+  panelTopbarHandledTap = false;
+  panelTopbarPointerId = event.pointerId;
   panel.classList.add('drawer-dragging');
   panelTopbar.setPointerCapture?.(event.pointerId);
 });
@@ -2578,19 +2652,42 @@ panelTopbar.addEventListener('pointermove', function(event) {
   if (panelDragStartY == null) return;
   event.preventDefault();
   event.stopPropagation();
+  const movement = event.clientY - panelDragStartY;
+  if (!panelTopbarDragged && Math.abs(movement) < 8) return;
+  panelTopbarDragged = true;
   const collapseOffset = getMobileDrawerCollapseOffset();
   const startOffset = panelDragStartOpen ? 0 : collapseOffset;
-  const offset = Math.min(collapseOffset, Math.max(0, startOffset + event.clientY - panelDragStartY));
-  if (Math.abs(event.clientY - panelDragStartY) >= 8) panelTopbarDragged = true;
+  const offset = Math.min(collapseOffset, Math.max(0, startOffset + movement));
   panel.style.setProperty('--drawer-drag-offset', `${offset}px`);
 });
 panelTopbar.addEventListener('pointerup', function(event) {
+  if (panelTopbarPointerId !== event.pointerId || panelDragStartY == null) return;
   event.preventDefault();
   event.stopPropagation();
+  if (panelTopbarDragged) {
+    finishMobileDrawerDrag();
+  } else {
+    panelDragStartY = null;
+    panel.classList.remove('drawer-dragging');
+    panel.style.removeProperty('--drawer-drag-offset');
+    panelTopbarHandledTap = true;
+    if (panel.classList.contains('open')) setRoutePanelOpen(false);
+    else openRoutesPanel();
+  }
+  panelTopbarPointerId = null;
+});
+panelTopbar.addEventListener('pointercancel', function(event) {
+  if (panelTopbarPointerId !== event.pointerId) return;
+  panelTopbarPointerId = null;
   finishMobileDrawerDrag();
 });
-panelTopbar.addEventListener('pointercancel', finishMobileDrawerDrag);
 panelTopbar.addEventListener('click', function(event) {
+  if (panelTopbarHandledTap) {
+    panelTopbarHandledTap = false;
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   if (!isMobileDrawerLayout() || event.target.closest('button') || panelTopbarDragged) return;
   if (panel.classList.contains('open')) setRoutePanelOpen(false);
   else openRoutesPanel();

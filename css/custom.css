@@ -140,6 +140,7 @@ select {
 
 #bottom-panel.route-name-keyboard-visible {
   bottom: var(--keyboard-panel-offset);
+  max-height: var(--keyboard-visible-height);
 }
 
 #bottom-panel.library-view {
@@ -1370,6 +1371,44 @@ select {
 .navigation-summary-metrics { margin-bottom: 16px; }
 .navigation-save-label { margin-top: 6px; }
 #walked-track-name { width: 100%; margin-bottom: 10px; }
+
+.navigation-elevation {
+  margin: 0 0 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-hover) 54%, transparent);
+  overflow: hidden;
+}
+
+.navigation-elevation summary {
+  min-height: 44px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.88rem;
+  font-weight: 740;
+}
+
+.navigation-elevation summary::-webkit-details-marker { display: none; }
+.navigation-elevation summary small { margin-left: auto; color: var(--muted-text); font-size: 0.76rem; font-weight: 650; }
+.navigation-elevation summary i { color: var(--muted-text); transition: transform 0.16s ease; }
+.navigation-elevation[open] summary { border-bottom: 1px solid var(--border-subtle); }
+.navigation-elevation[open] summary i { transform: rotate(180deg); }
+.navigation-elevation .navigation-profile { margin: 10px; }
+.navigation-peek-copy { display: grid; gap: 1px; text-align: left; line-height: 1.15; }
+.navigation-peek-copy small { color: var(--muted-text); font-size: 0.72rem; font-weight: 700; }
+
+#bottom-panel.route-name-keyboard-visible #panel-content { overscroll-behavior: contain; }
+#bottom-panel.route-name-keyboard-visible .rename-route-form .route-actions-row {
+  position: sticky;
+  bottom: -1px;
+  z-index: 1;
+  padding: 8px 0 calc(2px + env(safe-area-inset-bottom));
+  background: var(--panel-bg);
+}
 
 .elevation-profile-y-label,
 .elevation-profile-x-label {
