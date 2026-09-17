@@ -208,6 +208,34 @@ function routeLineCoordinates(geojson) {
         .map(point => [Number(point[0]), Number(point[1])]);
 }
 
+function hasValidRouteCoordinates(geojson) {
+    let pointCount = 0;
+    let valid = true;
+    const checkLine = coordinates => {
+        if (!Array.isArray(coordinates)) { valid = false; return; }
+        coordinates.forEach(point => {
+            const lng = Number(point && point[0]);
+            const lat = Number(point && point[1]);
+            if (!Array.isArray(point) || !Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) valid = false;
+            else pointCount++;
+        });
+    };
+    const visit = item => {
+        if (!item || typeof item !== 'object') { valid = false; return; }
+        if (item.type === 'Feature') return visit(item.geometry);
+        if (item.type === 'FeatureCollection') {
+            if (!Array.isArray(item.features)) { valid = false; return; }
+            item.features.forEach(visit);
+        } else if (item.type === 'LineString') checkLine(item.coordinates);
+        else if (item.type === 'MultiLineString') {
+            if (!Array.isArray(item.coordinates)) { valid = false; return; }
+            else item.coordinates.forEach(checkLine);
+        } else valid = false;
+    };
+    visit(geojson);
+    return valid && pointCount >= 2;
+}
+
 function distanceBetweenCoordinates(a, b) {
     const radius = 6371000;
     const toRadians = value => value * Math.PI / 180;
@@ -396,7 +424,7 @@ window.currentRouteIndex = { uk: null, world: null };
 
 function loadRouteByIndex(mode, idx) {
     const routes = getRouteList(mode);
-    if (!routes[idx] || !routes[idx].geojson) return false;
+    if (!routes[idx] || !routes[idx].geojson || !hasValidRouteCoordinates(routes[idx].geojson)) return false;
     const route = routes[idx];
     let layer = L.geoJSON(route.geojson, { style: getRouteStyle(mode, route) });
     if (typeof window.clearSteepnessDisplay === 'function') window.clearSteepnessDisplay(mode);

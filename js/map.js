@@ -638,6 +638,19 @@ function clearNavigationOverlays() {
 }
 
 function getLiveLocationSession() { return navigation || trackRecording; }
+window.hasFieldMapsLiveLocation = () => Boolean(getLiveLocationSession());
+
+function stopNormalLocateControls() {
+  [mapUK, mapWorld].forEach(map => map._fieldMapsLocateControl?.stop?.());
+}
+
+function clearLiveLocationViewport(live) {
+  if (!live) return;
+  live.follow = false;
+  // A finished session must not leave an in-flight map movement behind for the
+  // saved-route view that follows it.
+  getNavigationMap(live.mode).stop();
+}
 
 function renderLiveLocationOverlays(live) {
   if (!live) return;
@@ -653,9 +666,14 @@ function renderLiveLocationOverlays(live) {
     }));
   }
   if (state.latestPosition) {
-    layer.addLayer(L.circleMarker([state.latestPosition.lat, state.latestPosition.lng], {
-      radius: 8, color: '#ffffff', weight: 3, fillColor: '#1f6f9c', fillOpacity: 1, interactive: false,
-      className: 'navigation-position-marker'
+    layer.addLayer(L.marker([state.latestPosition.lat, state.latestPosition.lng], {
+      interactive: false,
+      keyboard: false,
+      icon: L.divIcon({
+        className: 'navigation-position-marker',
+        html: '<span class="navigation-position-halo"></span><span class="navigation-position-dot"></span>',
+        iconSize: [24, 24], iconAnchor: [12, 12]
+      })
     }));
   }
 }
@@ -834,6 +852,7 @@ function finishTrackRecording() {
   if (!trackRecording) return;
   const ending = trackRecording;
   stopNavigationTimer(ending);
+  clearLiveLocationViewport(ending);
   const recording = ending.session.finishRecording();
   trackSummary = { mode: ending.mode, session: ending.session, recording };
   confirmingTrackDiscard = false;
@@ -871,13 +890,20 @@ function discardTrackSummary() {
 function saveTrackedRoute() {
   const summary = trackSummary;
   if (!summary || summary.recording.pointCount < 2) return;
-  const layer = L.geoJSON(FieldMapsLiveLocation.recordingGeoJSON(summary.recording.points));
+  const geojson = FieldMapsLiveLocation.recordingGeoJSON(summary.recording.points);
+  if (!geojson) {
+    routePanelNotice = 'This recording contains invalid GPS coordinates and cannot be saved.';
+    showRoutePanelContent();
+    return;
+  }
+  const layer = L.geoJSON(geojson);
   const targetLayer = summary.mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
   const notesLayer = summary.mode === 'uk' ? window.routeNotesLayerUK : window.routeNotesLayerWorld;
   targetLayer.clearLayers(); notesLayer.clearLayers();
   window.currentRouteIndex[summary.mode] = window.saveRouteToList(summary.mode, 'Recorded walk', layer);
   window.applyRouteStyle(layer, summary.mode, window.getRouteList(summary.mode)[window.currentRouteIndex[summary.mode]]);
   layer.eachLayer(item => targetLayer.addLayer(item));
+  summary.session.cancelRecording();
   trackSummary = null;
   renamingRoute = true;
   routePanelNotice = '';
@@ -940,22 +966,34 @@ function getNavigationUsableMapPoint(mode) {
   const container = map.getContainer();
   const mapRect = container.getBoundingClientRect();
   let visibleBottom = mapRect.bottom;
+  let visibleRight = mapRect.right;
   if (isMobileDrawerLayout()) {
     const drawerRect = panel.getBoundingClientRect();
     if (drawerRect.top > mapRect.top && drawerRect.top < mapRect.bottom) visibleBottom = drawerRect.top;
+  } else if (panel.classList.contains('open')) {
+    const drawerRect = panel.getBoundingClientRect();
+    if (drawerRect.left > mapRect.left && drawerRect.left < mapRect.right) visibleRight = drawerRect.left;
   }
-  return L.point(mapRect.width / 2, Math.max(0, (visibleBottom - mapRect.top) / 2));
+  return L.point(
+    Math.max(0, (visibleRight - mapRect.left) / 2),
+    Math.max(0, (visibleBottom - mapRect.top) / 2)
+  );
 }
 
 function followNavigationPosition() {
   const live = getLiveLocationSession();
   if (!live?.follow || !live.session.latestPosition) return;
   const map = getNavigationMap(live.mode);
+  const zoom = map.getZoom();
   const current = map.latLngToContainerPoint([live.session.latestPosition.lat, live.session.latestPosition.lng]);
   const target = getNavigationUsableMapPoint(live.mode);
   const delta = current.subtract(target);
   if (Math.abs(delta.x) < 12 && Math.abs(delta.y) < 12) return;
-  map.panBy(delta, { animate: true, duration: 0.25, easeLinearity: 0.35, noMoveStart: true });
+  // panBy works in container pixels and therefore cannot alter Leaflet's zoom.
+  // Keeping this non-animated also prevents rapid Android GPS callbacks from
+  // queueing competing pan animations and flashing the viewport.
+  map.panBy(delta, { animate: false, noMoveStart: true });
+  console.assert(map.getZoom() === zoom, 'Live location follow must preserve zoom');
 }
 
 function refreshNavigationMapPosition() {
@@ -984,6 +1022,8 @@ function startNavigation(context) {
     showRoutePanelContent();
     return;
   }
+  stopNormalLocateControls();
+  stopNormalLocateControls();
   const session = FieldMapsLiveLocation.createSession();
   const receive = session.onLocation;
   session.onLocation = function(position) {
@@ -1008,6 +1048,7 @@ function endNavigation() {
   if (!navigation) return;
   const ending = navigation;
   stopNavigationTimer(ending);
+  clearLiveLocationViewport(ending);
   const recording = ending.session.finishRecording();
   navigationSummary = { mode: ending.mode, index: ending.index, plannedRoute: ending.plannedRoute, match: ending.match, recording };
   navigation = null;
@@ -1028,8 +1069,12 @@ function saveNavigationTrack(name) {
   const summary = navigationSummary;
   const points = summary?.recording?.points || [];
   if (!summary || points.length < 2) return false;
-  const layer = L.geoJSON(FieldMapsLiveLocation.recordingGeoJSON(points));
+  const geojson = FieldMapsLiveLocation.recordingGeoJSON(points);
+  if (!geojson) return false;
+  const layer = L.geoJSON(geojson);
   const index = window.saveRouteToList(summary.mode, name, layer);
+  summary.recording = null;
+  summary.session.cancelRecording();
   navigationSummary = null;
   routePanelNotice = 'Walked track saved as a new route.';
   panelView = 'details';
