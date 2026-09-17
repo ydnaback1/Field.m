@@ -144,10 +144,13 @@ if (L.Draw.Polyline) {
 
 // --- Panel, FAB, and Draw Control State ---
 const fab = document.getElementById('fab-route');
-const backupFab = document.getElementById('fab-route-backup');
+const settingsFab = document.getElementById('fab-settings');
 const panel = document.getElementById('bottom-panel');
 const fabIcon = fab.querySelector('i');
 const panelClose = document.getElementById('panel-close');
+const panelTopbar = document.getElementById('panel-topbar');
+const panelRouteToggle = document.getElementById('panel-route-toggle');
+const panelSettings = document.getElementById('panel-settings');
 const drawToolbarContainer = document.getElementById('draw-toolbar-container');
 const panelContent = document.getElementById('panel-content');
 let activeDrawControl = null;
@@ -159,6 +162,7 @@ let pathDraft = null;
 let snapPreview = null;
 let sharedRouteImport = null;
 let panelView = 'library';
+let routePanelViewBeforeSettings = 'library';
 let routeLibraryQuery = '';
 let routeLibrarySort = 'recent';
 let routeLibraryFilter = 'all';
@@ -795,6 +799,35 @@ function isMobileRouteLayout() {
   return window.matchMedia('(max-width: 700px)').matches;
 }
 
+function isMobileDrawerLayout() {
+  return window.matchMedia('(max-width: 600px)').matches;
+}
+
+function getAppropriateRoutePanelView() {
+  return getActiveRouteContext() ? 'details' : 'library';
+}
+
+function openRoutesPanel() {
+  if (!drawingMode && !editingMode && !notePlacementMode && !noteDraft && !snapPreview && !sharedRouteImport) {
+    const context = getActiveRouteContext();
+    panelView = routePanelViewBeforeSettings === 'details' && context
+      ? 'details'
+      : getAppropriateRoutePanelView();
+  }
+  setRoutePanelOpen(true);
+}
+
+function openSettingsPanel() {
+  if (panelView === 'details' || panelView === 'library') {
+    routePanelViewBeforeSettings = panelView;
+  } else {
+    routePanelViewBeforeSettings = getAppropriateRoutePanelView();
+  }
+  panelView = 'settings';
+  routeBackupNotice = '';
+  setRoutePanelOpen(true);
+}
+
 function scheduleRouteFitToVisibleMap(mode) {
   if (!isMobileRouteLayout()) return;
   window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
@@ -946,16 +979,16 @@ function importRouteBackup(strategy) {
 function showRouteBackup() {
   panel.classList.remove('library-view');
   panel.classList.remove('library-scroll-view');
-  panel.setAttribute('aria-label', 'Route data and backup');
+  panel.setAttribute('aria-label', 'Data and storage');
   panelContent.className = 'route-detail-content route-backup-content';
   const preview = routeBackupCandidate ? `${routeBackupCandidate.routes.uk.length} UK routes / ${routeBackupCandidate.routes.world.length} Worldwide routes` : '';
   panelContent.innerHTML = `
     <div class="panel-navigation">
-      <button id="back-to-library-from-backup" class="panel-back" type="button"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Saved routes</button>
+      <button id="back-to-settings-from-backup" class="panel-back" type="button"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Settings</button>
     </div>
     <div class="panel-heading workflow-heading">
-      <div class="panel-eyebrow">Data / backup</div>
-      <h2 class="route-title">Route backup</h2>
+      <div class="panel-eyebrow">Settings</div>
+      <h2 class="route-title">Data &amp; storage</h2>
       <p class="panel-hint">Export only saved routes, or restore routes from a Field Maps backup file.</p>
     </div>
     <section class="route-backup-section" aria-labelledby="export-route-backup-title">
@@ -985,8 +1018,8 @@ function showRouteBackup() {
       <p id="app-storage-notice" class="route-backup-notice" role="status"></p>
     </section>
     ${routeBackupNotice ? `<p class="route-backup-notice" role="status">${escapeHtml(routeBackupNotice)}</p>` : ''}`;
-  panelContent.querySelector('#back-to-library-from-backup').onclick = function() {
-    panelView = 'library';
+  panelContent.querySelector('#back-to-settings-from-backup').onclick = function() {
+    panelView = 'settings';
     showRoutePanelContent();
   };
   panelContent.querySelector('#export-route-backup').onclick = exportRouteBackupFile;
@@ -1034,6 +1067,70 @@ function showRouteBackup() {
       }
     };
   }
+}
+
+function resetRouteNameKeyboardLayout() {
+  panel.classList.remove('route-name-keyboard-visible');
+  panel.style.removeProperty('--keyboard-panel-offset');
+}
+
+function keepRouteNameVisible() {
+  const input = panelContent.querySelector('#route-name-input');
+  if (!input || document.activeElement !== input) {
+    resetRouteNameKeyboardLayout();
+    return;
+  }
+  const touchViewport = window.matchMedia?.('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+  const viewport = window.visualViewport;
+  if (!touchViewport || !viewport) return;
+  const inputBounds = input.getBoundingClientRect();
+  const visibleBottom = viewport.offsetTop + viewport.height - 16;
+  const currentOffset = Number.parseFloat(panel.style.getPropertyValue('--keyboard-panel-offset')) || 0;
+  const offset = Math.max(0, Math.ceil(currentOffset + inputBounds.bottom - visibleBottom));
+  if (offset) {
+    panel.style.setProperty('--keyboard-panel-offset', `${offset}px`);
+    panel.classList.add('route-name-keyboard-visible');
+    input.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+  } else {
+    resetRouteNameKeyboardLayout();
+  }
+}
+
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', keepRouteNameVisible);
+  window.visualViewport.addEventListener('scroll', keepRouteNameVisible);
+}
+
+function showSettings() {
+  panel.classList.remove('library-view');
+  panel.classList.remove('library-scroll-view');
+  panel.setAttribute('aria-label', 'Settings and tools');
+  panelContent.className = 'route-detail-content route-backup-content settings-content';
+  panelContent.innerHTML = `
+    <div class="panel-heading workflow-heading">
+      <div class="panel-eyebrow">Field Maps</div>
+      <h2 class="route-title">Settings &amp; tools</h2>
+      <p class="panel-hint">Map tools, route data, and app-file controls.</p>
+    </div>
+    <section class="route-backup-section" aria-labelledby="settings-tools-title">
+      <h3 id="settings-tools-title">Map &amp; tools</h3>
+      <p>Measure distance or area on the current map.</p>
+      <button id="open-measure-tool" class="secondary-action" type="button"><i class="fa-solid fa-ruler" aria-hidden="true"></i> Measure</button>
+    </section>
+    <section class="route-backup-section" aria-labelledby="settings-data-title">
+      <h3 id="settings-data-title">Data &amp; storage</h3>
+      <p>Export, validate, restore, merge, or replace saved route backups.</p>
+      <button id="open-data-storage" class="secondary-action" type="button"><i class="fa-solid fa-database" aria-hidden="true"></i> Route backup &amp; storage</button>
+    </section>`;
+  panelContent.querySelector('#open-measure-tool').onclick = function() {
+    setRoutePanelOpen(false);
+    window.openMeasureTool?.();
+  };
+  panelContent.querySelector('#open-data-storage').onclick = function() {
+    panelView = 'backup';
+    routeBackupNotice = '';
+    showRoutePanelContent();
+  };
 }
 
 function startRouteDrawing() {
@@ -1673,7 +1770,10 @@ function showActiveRouteDetails(context) {
     window.requestAnimationFrame(() => {
       input.focus({ preventScroll: true });
       input.select();
+      keepRouteNameVisible();
     });
+    input.addEventListener('focus', () => window.requestAnimationFrame(keepRouteNameVisible));
+    input.addEventListener('blur', () => window.setTimeout(resetRouteNameKeyboardLayout, 0));
     return;
   }
 
@@ -1833,6 +1933,10 @@ function showRoutePanelContent() {
     showRouteBackup();
     return;
   }
+  if (panelView === 'settings') {
+    showSettings();
+    return;
+  }
   if (panelView === 'details' && context) {
     showActiveRouteDetails(context);
   } else {
@@ -1879,40 +1983,128 @@ function removeDrawToolbar() {
 
 // --- FAB/panel toggle ---
 function setRoutePanelOpen(isOpen, restoreFocus = false) {
+  const mobilePeek = !isOpen && isMobileDrawerLayout();
   panel.classList.toggle('open', isOpen);
+  panel.classList.toggle('mobile-peek', mobilePeek);
   fab.classList.toggle('panel-open', isOpen);
-  backupFab.classList.toggle('panel-open', isOpen);
+  settingsFab.classList.toggle('panel-open', isOpen);
   fabIcon.className = 'fas fa-route';
   fab.setAttribute('aria-expanded', String(isOpen));
-  panel.setAttribute('aria-hidden', String(!isOpen));
-  panel.inert = !isOpen;
+  settingsFab.setAttribute('aria-expanded', String(isOpen));
+  panel.setAttribute('aria-hidden', String(!isOpen && !mobilePeek));
+  if (mobilePeek) panel.setAttribute('aria-label', 'Routes');
+  panel.inert = !isOpen && !mobilePeek;
   if (isOpen) {
     showRoutePanelContent();
     addDrawToolbar();
     window.requestAnimationFrame(() => panelClose.focus({ preventScroll: true }));
   } else {
+    resetRouteNameKeyboardLayout();
     clearRouteProfileMarker();
-    panelContent.innerHTML = '';
+    if (!mobilePeek) panelContent.innerHTML = '';
     removeDrawToolbar();
     drawingMode = false;
     editingMode = false;
-    if (restoreFocus) fab.focus({ preventScroll: true });
+    if (restoreFocus) {
+      const restoreTarget = isMobileDrawerLayout() ? panelRouteToggle : (panelView === 'settings' ? settingsFab : fab);
+      restoreTarget.focus({ preventScroll: true });
+    }
   }
 }
 
 fab.onclick = function() {
-  setRoutePanelOpen(!panel.classList.contains('open'));
+  if (panel.classList.contains('open') && panelView !== 'settings' && panelView !== 'backup') {
+    setRoutePanelOpen(false);
+  } else {
+    openRoutesPanel();
+  }
 };
 
-backupFab.onclick = function() {
-  panelView = 'backup';
-  routeBackupNotice = '';
-  setRoutePanelOpen(true);
+settingsFab.onclick = function() {
+  openSettingsPanel();
+};
+
+panelRouteToggle.onclick = function() {
+  openRoutesPanel();
+};
+
+panelSettings.onclick = function() {
+  openSettingsPanel();
 };
 
 panelClose.onclick = function() {
   setRoutePanelOpen(false, true);
 };
+
+let panelDragStartY = null;
+let panelDragStartOpen = false;
+let panelTopbarDragged = false;
+
+function getMobileDrawerCollapseOffset() {
+  const peekHeight = 58 + (Number.parseFloat(getComputedStyle(panel).getPropertyValue('padding-bottom')) || 0);
+  return Math.max(0, panel.getBoundingClientRect().height - peekHeight);
+}
+
+function finishMobileDrawerDrag() {
+  if (panelDragStartY == null) return;
+  if (!panelTopbarDragged) {
+    panelDragStartY = null;
+    panel.classList.remove('drawer-dragging');
+    panel.style.removeProperty('--drawer-drag-offset');
+    return;
+  }
+  const collapseOffset = getMobileDrawerCollapseOffset();
+  const currentOffset = Number.parseFloat(panel.style.getPropertyValue('--drawer-drag-offset')) || 0;
+  const shouldOpen = currentOffset < collapseOffset * 0.45;
+  panelDragStartY = null;
+  if (shouldOpen && !drawingMode && !editingMode && !notePlacementMode && !noteDraft && !snapPreview && !sharedRouteImport) {
+    panelView = getAppropriateRoutePanelView();
+  }
+  setRoutePanelOpen(shouldOpen);
+  window.requestAnimationFrame(() => {
+    panel.classList.remove('drawer-dragging');
+    panel.style.removeProperty('--drawer-drag-offset');
+  });
+  window.setTimeout(() => { panelTopbarDragged = false; }, 0);
+}
+
+panelTopbar.addEventListener('pointerdown', function(event) {
+  if (!isMobileDrawerLayout() || event.target.closest('button')) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (!panel.classList.contains('open') && !panelContent.childElementCount) {
+    panelView = getAppropriateRoutePanelView();
+    panel.classList.remove('mobile-peek');
+    showRoutePanelContent();
+    panel.classList.add('mobile-peek');
+  }
+  panelDragStartY = event.clientY;
+  panelDragStartOpen = panel.classList.contains('open');
+  panelTopbarDragged = false;
+  panel.classList.add('drawer-dragging');
+  panelTopbar.setPointerCapture?.(event.pointerId);
+});
+panelTopbar.addEventListener('pointermove', function(event) {
+  if (panelDragStartY == null) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const collapseOffset = getMobileDrawerCollapseOffset();
+  const startOffset = panelDragStartOpen ? 0 : collapseOffset;
+  const offset = Math.min(collapseOffset, Math.max(0, startOffset + event.clientY - panelDragStartY));
+  if (Math.abs(event.clientY - panelDragStartY) >= 8) panelTopbarDragged = true;
+  panel.style.setProperty('--drawer-drag-offset', `${offset}px`);
+});
+panelTopbar.addEventListener('pointerup', function(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  finishMobileDrawerDrag();
+});
+panelTopbar.addEventListener('pointercancel', finishMobileDrawerDrag);
+panelTopbar.addEventListener('click', function(event) {
+  if (!isMobileDrawerLayout() || event.target.closest('button') || panelTopbarDragged) return;
+  if (panel.classList.contains('open')) setRoutePanelOpen(false);
+  else openRoutesPanel();
+});
 
 document.addEventListener('keydown', function(event) {
   if (event.key === 'Escape' && panel.classList.contains('open')) {
@@ -2077,15 +2269,7 @@ window.switchMap = function(mode) {
   let center, zoom;
   if (activeDrawControl) removeDrawToolbar();
   if (panel.classList.contains('open')) {
-    panel.classList.remove('open');
-    fab.classList.remove('panel-open');
-    fabIcon.className = 'fas fa-route';
-    fab.setAttribute('aria-expanded', 'false');
-    panel.setAttribute('aria-hidden', 'true');
-    panel.inert = true;
-    panelContent.innerHTML = '';
-    drawingMode = false;
-    editingMode = false;
+    setRoutePanelOpen(false);
   }
 
   if (currentMode === 'uk') {
@@ -2132,3 +2316,4 @@ function updateGlobeIcon() {
 // Initial state
 updateGlobeIcon();
 updateRouteFabLabel();
+setRoutePanelOpen(false);

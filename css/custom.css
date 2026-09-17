@@ -138,6 +138,10 @@ select {
   transition-delay: 0s;
 }
 
+#bottom-panel.route-name-keyboard-visible {
+  bottom: var(--keyboard-panel-offset);
+}
+
 #bottom-panel.library-view {
   max-height: min(72vh, 660px);
 }
@@ -152,6 +156,11 @@ select {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+#panel-route-toggle,
+#panel-settings {
+  display: none;
 }
 
 #panel-drag {
@@ -605,13 +614,14 @@ select {
 
 .app-update-notice {
   position: fixed;
-  right: calc(18px + env(safe-area-inset-right));
-  bottom: calc(156px + env(safe-area-inset-bottom));
+  top: calc(env(safe-area-inset-top) + 14px);
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 1400;
   display: flex;
   align-items: center;
   gap: 10px;
-  max-width: calc(100vw - 36px);
+  max-width: calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right));
   padding: 10px 12px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 12px;
@@ -1423,7 +1433,7 @@ select {
 
 /* --- Floating Action Button --- */
 #fab-route,
-#fab-route-backup {
+#fab-settings {
   position: fixed;
   right: calc(18px + env(safe-area-inset-right));
   width: 58px;
@@ -1450,7 +1460,7 @@ select {
   bottom: calc(18px + env(safe-area-inset-bottom));
 }
 
-#fab-route-backup {
+#fab-settings {
   bottom: calc(86px + env(safe-area-inset-bottom));
   width: 44px;
   height: 44px;
@@ -1459,7 +1469,7 @@ select {
 }
 
 #fab-route.panel-open,
-#fab-route-backup.panel-open {
+#fab-settings.panel-open {
   opacity: 0;
   pointer-events: none;
   transform: translateY(10px) scale(0.92);
@@ -1483,6 +1493,7 @@ select {
   color: var(--text-dark);
   border: none;
   box-sizing: border-box;
+  text-decoration: none;
 }
 
 .leaflet-control-layers-toggle::before {
@@ -1808,7 +1819,7 @@ select {
   }
 
   #fab-route:hover,
-  #fab-route-backup:hover {
+  #fab-settings:hover {
     background: var(--surface-dark-strong);
     transform: translateY(-2px);
     box-shadow: var(--shadow-strong);
@@ -1821,7 +1832,7 @@ select {
 .leaflet-measure-toggle:active,
 .globe-btn:active,
 #fab-route:active,
-#fab-route-backup:active,
+#fab-settings:active,
 #panel-close:active,
 #panel-content button:active {
   transform: scale(0.96);
@@ -1834,7 +1845,7 @@ select {
 .leaflet-control-measure a.start:focus-visible,
 .globe-btn:focus-visible,
 #fab-route:focus-visible,
-#fab-route-backup:focus-visible,
+#fab-settings:focus-visible,
 #panel-close:focus-visible,
 #panel-content button:focus-visible,
 #panel-content select:focus-visible,
@@ -1877,9 +1888,86 @@ select {
 }
 
 @media (max-width: 600px) {
+  #fab-route,
+  #fab-settings {
+    display: none;
+  }
+
   #bottom-panel {
     max-width: none;
+    bottom: env(safe-area-inset-bottom);
     border-radius: 20px 20px 0 0;
+    transform: translateY(calc(100% - (58px + env(safe-area-inset-bottom))));
+    visibility: visible;
+    transition: transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    will-change: transform;
+  }
+
+  #bottom-panel.open {
+    transform: translateY(0);
+  }
+
+  #bottom-panel.mobile-peek {
+    min-height: calc(58px + env(safe-area-inset-bottom));
+    visibility: visible;
+    transition-delay: 0s;
+  }
+
+  #bottom-panel.mobile-peek #panel-content,
+  #bottom-panel.mobile-peek #draw-toolbar-container {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  #bottom-panel.drawer-dragging {
+    transition: none;
+    transform: translateY(var(--drawer-drag-offset)) !important;
+  }
+
+  #panel-route-toggle,
+  #panel-settings {
+    position: absolute;
+    top: 0;
+    bottom: env(safe-area-inset-bottom);
+    display: inline-flex;
+    align-items: center;
+    border: 0;
+    background: transparent;
+    color: var(--panel-text);
+    cursor: pointer;
+  }
+
+  #panel-topbar,
+  #panel-drag {
+    touch-action: none;
+  }
+
+  #panel-route-toggle {
+    left: 14px;
+    gap: 8px;
+    padding: 0 8px;
+    font-size: 0.9rem;
+    font-weight: 760;
+  }
+
+  #panel-settings {
+    right: 12px;
+    width: 40px;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 1rem;
+  }
+
+  #bottom-panel.open #panel-settings {
+    right: 52px;
+  }
+
+  #bottom-panel.mobile-peek #panel-close {
+    display: none;
+  }
+
+  .leaflet-bottom.leaflet-left {
+    bottom: calc(58px + env(safe-area-inset-bottom));
   }
 
   #bottom-panel.library-view.library-scroll-view {
@@ -1945,6 +2033,12 @@ select {
 
   #panel-content .route-more-actions .secondary-action {
     justify-content: center;
+  }
+}
+
+@media (max-width: 600px) and (prefers-reduced-motion: reduce) {
+  #bottom-panel {
+    transition: none;
   }
 }
 

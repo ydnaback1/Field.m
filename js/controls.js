@@ -79,6 +79,29 @@ function prepareMeasureControl(control) {
   });
 }
 
+function createMeasureControl(map, color) {
+  var measureControl = L.control.measure({
+    position: 'topleft',
+    collapsed: true,
+    title: 'Measure',
+    color: color
+  });
+  map._fieldMapsMeasureControl = measureControl;
+}
+
+window.openMeasureTool = function() {
+  var map = window.currentMode === 'world' ? window.mapWorld : window.mapUK;
+  var control = map && map._fieldMapsMeasureControl;
+  if (!map || !control) return;
+  if (!control.getContainer()) {
+    map.addControl(control);
+    labelControl(control, '.leaflet-measure-toggle', 'Measure distance');
+    prepareMeasureControl(control);
+  }
+  var toggle = control.getContainer().querySelector('.leaflet-measure-toggle');
+  if (toggle) toggle.click();
+};
+
 function addUKControls(map, baseLayers) {
     var layerControl = L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map);
     labelControl(layerControl, '.leaflet-control-layers-toggle', 'Choose map style');
@@ -86,14 +109,7 @@ function addUKControls(map, baseLayers) {
     // Route control is handled separately in map.js
     var locateControl = L.control.locate().addTo(map);
     labelControl(locateControl, 'a', 'Find my location');
-    var measureControl = L.control.measure({
-        position: 'topleft',
-        collapsed: true,
-        title: 'Measure',
-        color: '#FF0080'
-    }).addTo(map);
-    labelControl(measureControl, '.leaflet-measure-toggle', 'Measure distance');
-    prepareMeasureControl(measureControl);
+    createMeasureControl(map, '#FF0080');
     L.control.scale({
         position: 'bottomleft',
         imperial: false,
@@ -106,14 +122,7 @@ function addWorldControls(map) {
     // Route control is handled separately in map.js
     var locateControl = L.control.locate().addTo(map);
     labelControl(locateControl, 'a', 'Find my location');
-    var measureControl = L.control.measure({
-        position: 'topleft',
-        collapsed: true,
-        title: 'Measure',
-        color: '#3388ff'
-    }).addTo(map);
-    labelControl(measureControl, '.leaflet-measure-toggle', 'Measure distance');
-    prepareMeasureControl(measureControl);
+    createMeasureControl(map, '#3388ff');
     L.control.scale({
         position: 'bottomleft',
         imperial: true,
