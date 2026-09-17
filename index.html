@@ -36,7 +36,13 @@
 
   <div id="bottom-panel" role="region" aria-label="Routes" aria-hidden="true" inert>
     <div id="panel-topbar">
+      <button id="panel-route-toggle" type="button" title="Open routes" aria-label="Open routes">
+        <i class="fas fa-route" aria-hidden="true"></i><span>Routes</span>
+      </button>
       <div id="panel-drag" aria-hidden="true"></div>
+      <button id="panel-settings" type="button" title="Settings and tools" aria-label="Settings and tools">
+        <i class="fas fa-gear" aria-hidden="true"></i>
+      </button>
       <button id="panel-close" type="button" title="Close routes" aria-label="Close routes">
         <i class="fas fa-chevron-down" aria-hidden="true"></i>
       </button>
@@ -44,8 +50,8 @@
     <div id="panel-content"></div>
     <div id="draw-toolbar-container"></div>
   </div>
-  <button id="fab-route-backup" type="button" title="Route data and backup" aria-label="Route data and backup" aria-controls="bottom-panel">
-    <i class="fas fa-database" aria-hidden="true"></i>
+  <button id="fab-settings" type="button" title="Settings and tools" aria-label="Settings and tools" aria-controls="bottom-panel" aria-expanded="false">
+    <i class="fas fa-gear" aria-hidden="true"></i>
   </button>
   <button id="fab-route" type="button" title="Open routes" aria-label="Open routes" aria-controls="bottom-panel" aria-expanded="false">
     <i class="fas fa-route" aria-hidden="true"></i>
