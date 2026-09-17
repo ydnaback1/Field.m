@@ -401,7 +401,9 @@ function loadRouteByIndex(mode, idx) {
     let layer = L.geoJSON(route.geojson, { style: getRouteStyle(mode, route) });
     if (typeof window.clearSteepnessDisplay === 'function') window.clearSteepnessDisplay(mode);
     const isMobileLayout = typeof window.isMobileRouteLayout === 'function' && window.isMobileRouteLayout();
-    const padding = { paddingBottomRight: [0, 216], paddingTopLeft: [0, 24] };
+    const padding = typeof window.getRouteFitOptions === 'function'
+        ? window.getRouteFitOptions()
+        : { paddingBottomRight: [0, 216], paddingTopLeft: [0, 24] };
 
     if (mode === 'uk') {
         window.routeLayerUK.clearLayers();

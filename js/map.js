@@ -144,7 +144,6 @@ if (L.Draw.Polyline) {
 
 // --- Panel, FAB, and Draw Control State ---
 const fab = document.getElementById('fab-route');
-const settingsFab = document.getElementById('fab-settings');
 const panel = document.getElementById('bottom-panel');
 const fabIcon = fab.querySelector('i');
 const panelClose = document.getElementById('panel-close');
@@ -791,12 +790,12 @@ function openRouteFromLibrary(mode, index) {
   selectedAnnotationId = null;
   routePanelNotice = '';
   setRoutePanelOpen(true);
-  scheduleRouteFitToVisibleMap(mode);
+  scheduleRouteFitToVisibleMap(mode, true);
   updateRouteFabLabel();
 }
 
 function isMobileRouteLayout() {
-  return window.matchMedia('(max-width: 700px)').matches;
+  return isMobileDrawerLayout();
 }
 
 function isMobileDrawerLayout() {
@@ -828,24 +827,60 @@ function openSettingsPanel() {
   setRoutePanelOpen(true);
 }
 
-function scheduleRouteFitToVisibleMap(mode) {
-  if (!isMobileRouteLayout()) return;
+function getRouteFitOptions() {
+  if (isMobileDrawerLayout()) {
+    const panelHeight = panel.classList.contains('open')
+      ? Math.ceil(panel.getBoundingClientRect().height)
+      : 0;
+    return {
+      paddingTopLeft: [18, 20],
+      paddingBottomRight: [18, panelHeight + 20]
+    };
+  }
+
+  if (panel.classList.contains('open')) {
+    const drawerRect = panel.getBoundingClientRect();
+    const rightInset = Math.max(0, window.innerWidth - drawerRect.right);
+    return {
+      paddingTopLeft: [24, 24],
+      paddingBottomRight: [Math.ceil(drawerRect.width + rightInset + 20), 24]
+    };
+  }
+
+  return { paddingTopLeft: [24, 24], paddingBottomRight: [24, 24] };
+}
+
+function updateDesktopMapControlOffset() {
+  const drawerRect = panel.getBoundingClientRect();
+  const drawerRightInset = Number.parseFloat(getComputedStyle(panel).right) || 0;
+  const offset = !isMobileDrawerLayout() && panel.classList.contains('open')
+    ? Math.ceil(drawerRect.width + drawerRightInset + 14)
+    : 0;
+  document.querySelectorAll('#map-uk, #map-world').forEach(mapContainer => {
+    mapContainer.style.setProperty('--desktop-drawer-control-offset', `${offset}px`);
+  });
+}
+
+function fitRouteBoundsToVisibleMap(mode, bounds) {
+  if (!bounds || !bounds.isValid()) return;
+  const map = mode === 'uk' ? mapUK : mapWorld;
+  map.fitBounds(bounds, getRouteFitOptions());
+}
+
+function scheduleRouteFitToVisibleMap(mode, includeDesktop = false) {
+  if (!isMobileDrawerLayout() && !includeDesktop) return;
   window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
     const context = getActiveRouteContext();
     if (!context || context.mode !== mode || !panel.classList.contains('open')) return;
     const routeLayer = mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
     const bounds = routeLayer.getBounds();
     if (!bounds.isValid()) return;
-    const panelHeight = Math.ceil(panel.getBoundingClientRect().height);
-    const map = mode === 'uk' ? mapUK : mapWorld;
-    map.fitBounds(bounds, {
-      paddingTopLeft: [18, 20],
-      paddingBottomRight: [18, panelHeight + 20]
-    });
+    fitRouteBoundsToVisibleMap(mode, bounds);
   }));
 }
 
 window.isMobileRouteLayout = isMobileRouteLayout;
+window.getRouteFitOptions = getRouteFitOptions;
 
 function renderRouteLibraryResults() {
   const results = panelContent.querySelector('#route-library-results');
@@ -1987,13 +2022,12 @@ function setRoutePanelOpen(isOpen, restoreFocus = false) {
   panel.classList.toggle('open', isOpen);
   panel.classList.toggle('mobile-peek', mobilePeek);
   fab.classList.toggle('panel-open', isOpen);
-  settingsFab.classList.toggle('panel-open', isOpen);
   fabIcon.className = 'fas fa-route';
   fab.setAttribute('aria-expanded', String(isOpen));
-  settingsFab.setAttribute('aria-expanded', String(isOpen));
   panel.setAttribute('aria-hidden', String(!isOpen && !mobilePeek));
   if (mobilePeek) panel.setAttribute('aria-label', 'Routes');
   panel.inert = !isOpen && !mobilePeek;
+  updateDesktopMapControlOffset();
   if (isOpen) {
     showRoutePanelContent();
     addDrawToolbar();
@@ -2006,11 +2040,24 @@ function setRoutePanelOpen(isOpen, restoreFocus = false) {
     drawingMode = false;
     editingMode = false;
     if (restoreFocus) {
-      const restoreTarget = isMobileDrawerLayout() ? panelRouteToggle : (panelView === 'settings' ? settingsFab : fab);
+      const restoreTarget = isMobileDrawerLayout() ? panelRouteToggle : fab;
       restoreTarget.focus({ preventScroll: true });
     }
   }
 }
+
+function syncRoutePanelLayout() {
+  panel.classList.remove('drawer-dragging');
+  panel.style.removeProperty('--drawer-drag-offset');
+  const mobilePeek = !panel.classList.contains('open') && isMobileDrawerLayout();
+  panel.classList.toggle('mobile-peek', mobilePeek);
+  panel.setAttribute('aria-hidden', String(!panel.classList.contains('open') && !mobilePeek));
+  panel.inert = !panel.classList.contains('open') && !mobilePeek;
+  updateDesktopMapControlOffset();
+}
+
+window.matchMedia('(max-width: 600px)').addEventListener('change', syncRoutePanelLayout);
+window.addEventListener('resize', updateDesktopMapControlOffset);
 
 fab.onclick = function() {
   if (panel.classList.contains('open') && panelView !== 'settings' && panelView !== 'backup') {
@@ -2018,10 +2065,6 @@ fab.onclick = function() {
   } else {
     openRoutesPanel();
   }
-};
-
-settingsFab.onclick = function() {
-  openSettingsPanel();
 };
 
 panelRouteToggle.onclick = function() {
@@ -2129,11 +2172,7 @@ mapUK.on(L.Draw.Event.CREATED, function (e) {
     renamingRoute = true;
     routePanelNotice = '';
     if (e.layer.getBounds().isValid()) {
-      const panelHeight = 300;
-      mapUK.fitBounds(e.layer.getBounds(), {
-        paddingBottomRight: [0, panelHeight + 16],
-        paddingTopLeft: [0, 24]
-      });
+      fitRouteBoundsToVisibleMap('uk', e.layer.getBounds());
     }
   }
   showRoutePanelContent();
@@ -2156,11 +2195,7 @@ mapWorld.on(L.Draw.Event.CREATED, function (e) {
     renamingRoute = true;
     routePanelNotice = '';
     if (e.layer.getBounds().isValid()) {
-      const panelHeight = 300;
-      mapWorld.fitBounds(e.layer.getBounds(), {
-        paddingBottomRight: [0, panelHeight + 16],
-        paddingTopLeft: [0, 24]
-      });
+      fitRouteBoundsToVisibleMap('world', e.layer.getBounds());
     }
   }
   showRoutePanelContent();
@@ -2255,8 +2290,7 @@ async function importSharedRoute(sharedRoute) {
   renderRouteAnnotations(sharedMode, importedRoute);
   panelView = 'details';
   sharedRouteImport = null;
-  const map = sharedMode === 'uk' ? mapUK : mapWorld;
-  map.fitBounds(layer.getBounds(), { paddingBottomRight: [0, 316], paddingTopLeft: [0, 24] });
+  fitRouteBoundsToVisibleMap(sharedMode, layer.getBounds());
   clearSharedRouteParam();
   showRoutePanelContent();
 }
