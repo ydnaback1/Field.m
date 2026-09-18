@@ -250,7 +250,7 @@
       getRecording() {
         if (!this.recording) return null;
         const now = this.recording.pausedAt || this.recording.finishedAt || Date.now();
-        return { status: this.recording.status, points: this.recording.points.slice(), pointCount: this.recording.points.length, distance: this.recording.distance, startTime: this.recording.startTime, elapsed: Math.max(0, now - this.recording.startTime - this.recording.pausedDuration) };
+        return { status: this.recording.status, points: this.recording.points.slice(), pointCount: this.recording.points.length, distance: this.recording.distance, startTime: this.recording.startTime, endTime: this.recording.finishedAt, elapsed: Math.max(0, now - this.recording.startTime - this.recording.pausedDuration) };
       },
       getState() { return { active: this.active, latestPosition: this.latestPosition, accuracy: this.latestPosition && this.latestPosition.accuracy, error: this.error || manager.error }; }
     };
