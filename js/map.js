@@ -2655,15 +2655,21 @@ function bindRouteShareAndExport(currentRoute) {
         if (shareStatus) shareStatus.textContent = 'This free-drawn route is too large to share reliably. Export GPX or GeoJSON instead.';
         return;
       }
+      const title = currentRoute.name || 'Route';
+      const text = `Route from Field Maps${currentRoute.name ? `: ${currentRoute.name}` : ''}`;
       let message = 'Share link copied.';
       try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
+        if (navigator.share) {
+          await navigator.share({ title, text, url: shareUrl });
+          message = 'Route shared.';
+        } else if (navigator.clipboard && navigator.clipboard.writeText) {
           await navigator.clipboard.writeText(shareUrl);
         } else {
           prompt('Copy this link to share:', shareUrl);
           message = 'Share link ready.';
         }
       } catch (e) {
+        if (e?.name === 'AbortError') return;
         prompt('Copy this link to share:', shareUrl);
         message = 'Share link ready.';
       }
