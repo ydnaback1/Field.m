@@ -95,6 +95,184 @@ select {
   color: currentColor;
 }
 
+/* --- Compact map search --- */
+.field-search-control {
+  position: relative;
+}
+
+.field-search-button {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface-light);
+  color: var(--icon-color);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  font: inherit;
+}
+
+.field-search-panel {
+  position: absolute;
+  top: 0;
+  left: 48px;
+  width: min(340px, calc(100vw - 76px));
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--surface-light);
+  color: var(--panel-text);
+  box-shadow: var(--shadow-strong);
+}
+
+.field-search-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 4px;
+}
+
+.field-search-form input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  background: var(--panel-bg);
+  color: var(--panel-text);
+  font: inherit;
+  font-size: 16px;
+}
+
+.field-search-close,
+.field-search-selection button {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.field-search-close {
+  width: 32px;
+  height: 32px;
+}
+
+.field-search-status {
+  min-height: 1.2em;
+  margin: 6px 2px 0;
+  color: var(--muted-text);
+  font-size: 0.78rem;
+}
+
+.field-search-results {
+  max-height: min(290px, calc(var(--field-search-viewport-height, 100vh) - 152px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.field-search-result {
+  width: 100%;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  gap: 1px 8px;
+  padding: 7px 5px;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--panel-text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.field-search-result strong,
+.field-search-result span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-search-result strong { font-size: 0.88rem; }
+.field-search-result span { color: var(--muted-text); font-size: 0.76rem; }
+.field-search-result small {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: var(--muted-text);
+  font-size: 0.68rem;
+}
+
+.field-search-result[aria-selected="true"],
+.field-search-result:focus-visible,
+.field-search-form input:focus-visible,
+.field-search-close:focus-visible,
+.field-search-selection button:focus-visible,
+.field-search-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.field-search-selection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--muted-text);
+  font-size: 0.76rem;
+}
+
+.field-search-selection[hidden] { display: none; }
+
+.field-search-selection span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-search-selection button { padding: 4px 6px; color: var(--accent-strong); }
+.field-search-attribution { display: block; margin: 7px 2px 0; color: var(--muted-text); font-size: 0.66rem; }
+
+.field-search-marker {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 3px solid #ffffff;
+  border-radius: 50% 50% 50% 0;
+  background: #e86414;
+  box-shadow: 0 2px 8px rgba(19, 27, 38, 0.36);
+  color: #171a1f;
+  transform: rotate(-45deg);
+}
+
+.field-search-marker i { transform: rotate(45deg); font-size: 0.78rem; }
+
+.field-search-marker-label {
+  padding: 3px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: var(--surface-light);
+  color: var(--panel-text);
+  box-shadow: var(--shadow-soft);
+  font-family: inherit;
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
 /* If you intentionally hide the default draw toolbar, keep these */
 .leaflet-draw-toolbar {
   display: none !important;

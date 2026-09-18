@@ -12,6 +12,7 @@ const APP_ASSETS = [
   "config.js",
   "js/pwa.js",
   "js/layers.js",
+  "js/search.js",
   "js/controls.js",
   "js/routes.js",
   "js/map.js",
