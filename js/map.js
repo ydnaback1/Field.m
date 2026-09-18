@@ -172,6 +172,7 @@ let routePanelViewBeforeSettings = 'library';
 let routeLibraryQuery = '';
 let routeLibrarySort = 'recent';
 let routeLibraryFilter = 'all';
+const expandedWalkHistoryRouteIds = new Set();
 let routeBackupCandidate = null;
 let routeBackupNotice = '';
 let renamingRoute = false;
@@ -1308,17 +1309,74 @@ function getRouteLibraryItems() {
     })));
 }
 
-function getVisibleRouteLibraryItems() {
+function getRecordedWalkTimestamp(route, index) {
+  const activity = route?.activity;
+  const timestamp = Date.parse(activity?.endedAt || activity?.startedAt || '');
+  return Number.isFinite(timestamp) ? timestamp : getRouteTimestamp(route, index);
+}
+
+function formatRecordedWalkDate(route) {
+  const activity = route?.activity;
+  const timestamp = Date.parse(activity?.endedAt || activity?.startedAt || '');
+  return Number.isFinite(timestamp) ? formatRouteDate({ updatedAt: new Date(timestamp).toISOString() }) : formatRouteDate(route);
+}
+
+function formatRecordedWalkDuration(route) {
+  const seconds = Number(route?.activity?.durationSeconds);
+  if (!Number.isFinite(seconds) || seconds < 0) return '';
+  const minutes = Math.round(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return hours ? `${hours}h${remainingMinutes ? ` ${remainingMinutes}m` : ''}` : `${minutes}m`;
+}
+
+function routeLibrarySearchText(item) {
+  const route = item.route;
+  return [
+    route.name,
+    formatRouteDate(route),
+    route.activity?.startedAt,
+    route.activity?.endedAt,
+    formatRecordedWalkDate(route),
+    formatRecordedWalkDuration(route)
+  ].filter(Boolean).join(' ').toLocaleLowerCase();
+}
+
+function getVisibleRouteLibraryGroups() {
   const query = routeLibraryQuery.trim().toLocaleLowerCase();
-  return getRouteLibraryItems()
+  const visibleItems = getRouteLibraryItems()
     .filter(item => routeLibraryFilter === 'all' || item.mode === routeLibraryFilter)
-    .filter(item => !query || String(item.route.name || '').toLocaleLowerCase().includes(query))
-    .sort((a, b) => {
+  const itemsById = new Map(visibleItems.map(item => [item.route.id, item]));
+  const childrenByParentId = new Map();
+  const topLevel = [];
+
+  visibleItems.forEach(item => {
+    const parent = item.route.sourceRouteId && itemsById.get(item.route.sourceRouteId);
+    if (parent) {
+      const children = childrenByParentId.get(parent.route.id) || [];
+      children.push(item);
+      childrenByParentId.set(parent.route.id, children);
+    } else {
+      topLevel.push(item);
+    }
+  });
+
+  const sortItems = (a, b) => {
       if (routeLibrarySort === 'name') {
         return String(a.route.name || '').localeCompare(String(b.route.name || ''), undefined, { sensitivity: 'base' });
       }
-      return getRouteTimestamp(b.route, b.index) - getRouteTimestamp(a.route, a.index);
-    });
+      const aRecent = Math.max(getRouteTimestamp(a.route, a.index), ...(childrenByParentId.get(a.route.id) || []).map(child => getRecordedWalkTimestamp(child.route, child.index)));
+      const bRecent = Math.max(getRouteTimestamp(b.route, b.index), ...(childrenByParentId.get(b.route.id) || []).map(child => getRecordedWalkTimestamp(child.route, child.index)));
+      return bRecent - aRecent;
+    };
+
+  return topLevel.sort(sortItems).map(parent => {
+    const children = (childrenByParentId.get(parent.route.id) || []).sort((a, b) => getRecordedWalkTimestamp(b.route, b.index) - getRecordedWalkTimestamp(a.route, a.index));
+    const parentMatches = !query || routeLibrarySearchText(parent).includes(query);
+    const matchingChildren = children.filter(child => !query || routeLibrarySearchText(child).includes(query));
+    if (!parentMatches && !matchingChildren.length) return null;
+    return { parent, children, parentMatches, matchingChildren };
+  }).filter(Boolean);
 }
 
 function formatLibraryDistance(km) {
@@ -1437,12 +1495,13 @@ function renderRouteLibraryResults() {
   const summary = panelContent.querySelector('#route-library-summary');
   if (!results || !summary) return;
 
-  const items = getVisibleRouteLibraryItems();
+  const groups = getVisibleRouteLibraryGroups();
   const total = getRouteLibraryItems().length;
-  summary.textContent = `${items.length} ${items.length === 1 ? 'route' : 'routes'} shown`;
+  const shownCount = groups.reduce((count, group) => count + 1 + (group.parentMatches ? group.children.length : group.matchingChildren.length), 0);
+  summary.textContent = `${shownCount} ${shownCount === 1 ? 'route' : 'routes'} shown`;
   results.replaceChildren();
 
-  if (!items.length) {
+  if (!groups.length) {
     const empty = document.createElement('div');
     empty.className = 'panel-empty route-library-empty';
     if (!total) {
@@ -1468,7 +1527,8 @@ function renderRouteLibraryResults() {
   const list = document.createElement('ul');
   list.className = 'route-library-list';
 
-  items.forEach(item => {
+  groups.forEach(group => {
+    const { parent: item, children, parentMatches, matchingChildren } = group;
     const routeName = item.route.name || 'Untitled route';
     const metrics = getRouteMetrics(item.route);
     const distance = formatLibraryDistance(metrics.km);
@@ -1493,6 +1553,50 @@ function renderRouteLibraryResults() {
     button.onclick = function() { openRouteFromLibrary(item.mode, item.index); };
     const listItem = document.createElement('li');
     listItem.appendChild(button);
+    if (children.length) {
+      const showOnlyMatches = !parentMatches && routeLibraryQuery.trim();
+      const visibleChildren = showOnlyMatches ? matchingChildren : children;
+      const expanded = expandedWalkHistoryRouteIds.has(item.route.id) || Boolean(showOnlyMatches);
+      const history = document.createElement('div');
+      history.className = `route-walk-history${expanded ? ' is-expanded' : ''}`;
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'route-walk-history-toggle';
+      toggle.setAttribute('aria-expanded', String(expanded));
+      toggle.innerHTML = `<span>${children.length} recorded ${children.length === 1 ? 'walk' : 'walks'}</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i>`;
+      toggle.onclick = function() {
+        if (expandedWalkHistoryRouteIds.has(item.route.id)) expandedWalkHistoryRouteIds.delete(item.route.id);
+        else expandedWalkHistoryRouteIds.add(item.route.id);
+        renderRouteLibraryResults();
+      };
+      history.appendChild(toggle);
+      if (expanded) {
+        const childList = document.createElement('ul');
+        childList.className = 'route-walk-history-list';
+        visibleChildren.forEach(child => {
+          const childMetrics = getRouteMetrics(child.route);
+          const childDistance = formatLibraryDistance(childMetrics.km);
+          const childDate = formatRecordedWalkDate(child.route);
+          const childDuration = formatRecordedWalkDuration(child.route);
+          const childButton = document.createElement('button');
+          childButton.type = 'button';
+          childButton.className = 'route-walk-history-row';
+          childButton.setAttribute('aria-label', `Open recorded walk${childDate ? ` from ${childDate}` : ''}`);
+          childButton.innerHTML = `<span class="route-walk-history-icon" style="--route-color: ${escapeAttribute(window.getRouteColor(child.mode, child.route))}" aria-hidden="true"><i class="fa-solid fa-person-walking"></i></span><span class="route-walk-history-copy"><span class="route-walk-history-title">${escapeHtml(childDate || child.route.name || 'Recorded walk')}</span><span class="route-walk-history-meta">${[childDistance, childDuration].filter(Boolean).map(value => escapeHtml(value)).join(' <span aria-hidden="true">·</span>')}</span></span><i class="fa-solid fa-chevron-right" aria-hidden="true"></i>`;
+          childButton.onclick = function() { openRouteFromLibrary(child.mode, child.index); };
+          const childItem = document.createElement('li');
+          childItem.appendChild(childButton);
+          childList.appendChild(childItem);
+        });
+        history.appendChild(childList);
+      }
+      listItem.appendChild(history);
+    } else if (item.route.activity) {
+      const recorded = document.createElement('span');
+      recorded.className = 'route-recorded-label';
+      recorded.textContent = 'Recorded';
+      listItem.appendChild(recorded);
+    }
     list.appendChild(listItem);
   });
 
