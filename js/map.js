@@ -631,6 +631,19 @@ function formatNavigationClock(milliseconds) {
     : `${minutes}:${String(remainder).padStart(2, '0')}`;
 }
 
+function activityFromRecording(recording) {
+  const startedAt = Number(recording?.startTime);
+  const endedAt = Number(recording?.endTime);
+  if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt)) return null;
+  return {
+    type: 'walked',
+    startedAt: new Date(startedAt).toISOString(),
+    endedAt: new Date(endedAt).toISOString(),
+    // This uses the same whole-second value displayed in the session summary.
+    durationSeconds: Math.max(0, Math.floor((Number(recording.elapsed) || 0) / 1000))
+  };
+}
+
 function clearNavigationOverlays() {
   navigationLayerUK.clearLayers();
   navigationLayerWorld.clearLayers();
@@ -900,7 +913,9 @@ function saveTrackedRoute() {
   const targetLayer = summary.mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
   const notesLayer = summary.mode === 'uk' ? window.routeNotesLayerUK : window.routeNotesLayerWorld;
   targetLayer.clearLayers(); notesLayer.clearLayers();
-  window.currentRouteIndex[summary.mode] = window.saveRouteToList(summary.mode, 'Recorded walk', layer);
+  window.currentRouteIndex[summary.mode] = window.saveRouteToList(summary.mode, 'Recorded walk', layer, null, {
+    activity: activityFromRecording(summary.recording)
+  });
   window.applyRouteStyle(layer, summary.mode, window.getRouteList(summary.mode)[window.currentRouteIndex[summary.mode]]);
   layer.eachLayer(item => targetLayer.addLayer(item));
   summary.session.cancelRecording();
@@ -1072,7 +1087,10 @@ function saveNavigationTrack(name) {
   const geojson = FieldMapsLiveLocation.recordingGeoJSON(points);
   if (!geojson) return false;
   const layer = L.geoJSON(geojson);
-  const index = window.saveRouteToList(summary.mode, name, layer);
+  const index = window.saveRouteToList(summary.mode, name, layer, null, {
+    sourceRouteId: summary.plannedRoute.id,
+    activity: activityFromRecording(summary.recording)
+  });
   summary.recording = null;
   summary.session.cancelRecording();
   navigationSummary = null;

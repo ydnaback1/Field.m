@@ -1,12 +1,60 @@
 // js/routes.js
 
-function getRouteList(mode) {
+function readRouteList(mode) {
     const key = 'routeList_' + mode;
     let arr = [];
     try {
         arr = JSON.parse(localStorage.getItem(key) || "[]");
     } catch(e) {}
     return Array.isArray(arr) ? arr : [];
+}
+
+function getRouteList(mode) {
+    return readRouteList(mode);
+}
+
+function createRouteId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    // This only supports older browsers. The timestamp and random portions make
+    // collisions impractical without making an ID depend on route contents.
+    return `route-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function ensureRouteId(route, usedIds) {
+    if (!isPlainRouteObject(route)) return false;
+    const id = typeof route.id === 'string' && route.id ? route.id : null;
+    if (id && (!usedIds || !usedIds.has(id))) {
+        if (usedIds) usedIds.add(id);
+        return false;
+    }
+    let nextId = createRouteId();
+    while (usedIds && usedIds.has(nextId)) nextId = createRouteId();
+    route.id = nextId;
+    if (usedIds) usedIds.add(nextId);
+    return true;
+}
+
+function ensureRouteListIds(routes, usedIds) {
+    let changed = false;
+    routes.forEach(route => { if (ensureRouteId(route, usedIds)) changed = true; });
+    return changed;
+}
+
+function getAllRouteIds() {
+    return new Set(['uk', 'world'].flatMap(mode => readRouteList(mode)
+        .map(route => route && route.id)
+        .filter(id => typeof id === 'string' && id)));
+}
+
+function migrateStoredRouteIds() {
+    if (typeof localStorage === 'undefined') return;
+    const lists = { uk: readRouteList('uk'), world: readRouteList('world') };
+    const usedIds = new Set();
+    ['uk', 'world'].forEach(mode => {
+        if (ensureRouteListIds(lists[mode], usedIds)) {
+            localStorage.setItem(`routeList_${mode}`, JSON.stringify(lists[mode]));
+        }
+    });
 }
 
 const DEFAULT_ROUTE_COLORS = {
@@ -19,8 +67,9 @@ const ROUTE_BACKUP_VERSION = 1;
 const ROUTE_BACKUP_MAX_BYTES = 5 * 1024 * 1024;
 const ROUTE_BACKUP_MAX_ROUTES_PER_MAP = 1000;
 const ROUTE_BACKUP_FIELDS = [
-    'name', 'geojson', 'color', 'annotations', 'routing', 'elevation',
-    'elevationData', 'cachedElevation', 'createdAt', 'updatedAt'
+    'id', 'name', 'geojson', 'color', 'annotations', 'routing', 'elevation',
+    'elevationData', 'cachedElevation', 'createdAt', 'updatedAt',
+    'sourceRouteId', 'activity'
 ];
 
 function isPlainRouteObject(value) {
@@ -45,6 +94,15 @@ function validateBackupRoute(route) {
     if (!isPlainRouteObject(route) || !isRouteGeoJson(route.geojson)) return false;
     if (route.name !== undefined && typeof route.name !== 'string') return false;
     if (route.color !== undefined && typeof route.color !== 'string') return false;
+    if (route.id !== undefined && (typeof route.id !== 'string' || !route.id)) return false;
+    if (route.sourceRouteId !== undefined && (typeof route.sourceRouteId !== 'string' || !route.sourceRouteId)) return false;
+    if (route.activity !== undefined) {
+        const activity = route.activity;
+        if (!isPlainRouteObject(activity) || typeof activity.type !== 'string' || !activity.type ||
+            typeof activity.startedAt !== 'string' || typeof activity.endedAt !== 'string' ||
+            Number.isNaN(Date.parse(activity.startedAt)) || Number.isNaN(Date.parse(activity.endedAt)) ||
+            !Number.isFinite(activity.durationSeconds) || activity.durationSeconds < 0) return false;
+    }
     return true;
 }
 
@@ -114,9 +172,32 @@ function applyRouteBackup(backup, strategy) {
     if (!result.valid) return result;
     if (strategy !== 'merge' && strategy !== 'replace') return { valid: false, error: 'Choose how to import this backup.' };
     const current = { uk: getRouteList('uk'), world: getRouteList('world') };
-    const nextLists = strategy === 'replace' ? result.backup.routes : {
-        uk: current.uk.concat(result.backup.routes.uk),
-        world: current.world.concat(result.backup.routes.world)
+    const imported = { uk: result.backup.routes.uk.map(copySupportedRouteRecord), world: result.backup.routes.world.map(copySupportedRouteRecord) };
+    const existingIds = strategy === 'merge'
+        ? new Set([...current.uk, ...current.world].map(route => route && route.id).filter(Boolean))
+        : new Set();
+    const resultingIds = new Set(existingIds);
+    const idMap = new Map();
+    ['uk', 'world'].forEach(mode => imported[mode].forEach(route => {
+        const importedId = typeof route.id === 'string' && route.id ? route.id : null;
+        if (importedId && !resultingIds.has(importedId)) {
+            resultingIds.add(importedId);
+            idMap.set(importedId, importedId);
+        } else {
+            const previousId = importedId;
+            ensureRouteId(route, resultingIds);
+            if (previousId && !idMap.has(previousId)) idMap.set(previousId, route.id);
+        }
+    }));
+    const availableIds = new Set([...existingIds, ...resultingIds]);
+    ['uk', 'world'].forEach(mode => imported[mode].forEach(route => {
+        if (!route.sourceRouteId) return;
+        if (idMap.has(route.sourceRouteId)) route.sourceRouteId = idMap.get(route.sourceRouteId);
+        else if (!availableIds.has(route.sourceRouteId)) delete route.sourceRouteId;
+    }));
+    const nextLists = strategy === 'replace' ? imported : {
+        uk: current.uk.concat(imported.uk),
+        world: current.world.concat(imported.world)
     };
     return saveImportedRouteLists(nextLists);
 }
@@ -139,12 +220,15 @@ function applyRouteStyle(layer, mode, route) {
     }
 }
 
-function saveRouteToList(mode, name, layer, routing) {
+function saveRouteToList(mode, name, layer, routing, metadata) {
     const geojson = layer.toGeoJSON();
     let arr = getRouteList(mode);
     const now = new Date().toISOString();
     const route = { name, geojson, createdAt: now, updatedAt: now };
     if (routing) route.routing = routing;
+    if (metadata && typeof metadata.sourceRouteId === 'string' && metadata.sourceRouteId) route.sourceRouteId = metadata.sourceRouteId;
+    if (metadata && isPlainRouteObject(metadata.activity)) route.activity = metadata.activity;
+    ensureRouteId(route, getAllRouteIds());
     arr.push(route);
     localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
     return arr.length - 1;
@@ -468,3 +552,9 @@ window.ROUTE_BACKUP_MAX_BYTES = ROUTE_BACKUP_MAX_BYTES;
 window.exportRouteBackup = exportRouteBackup;
 window.validateRouteBackup = validateRouteBackup;
 window.applyRouteBackup = applyRouteBackup;
+window.ensureRouteId = ensureRouteId;
+window.ensureRouteListIds = ensureRouteListIds;
+
+// Legacy lists are updated once at startup. Later reads are deliberately pure,
+// so normal route operations never regenerate or churn stored IDs.
+migrateStoredRouteIds();
