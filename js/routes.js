@@ -90,12 +90,22 @@ function isRouteGeoJson(value) {
         (value.type === 'Feature' || value.type === 'FeatureCollection' || value.type === 'LineString' || value.type === 'MultiLineString');
 }
 
+function hasValidRouteAnnotation(annotation) {
+    return isPlainRouteObject(annotation) &&
+        typeof annotation.id === 'string' && annotation.id &&
+        typeof annotation.title === 'string' && annotation.title &&
+        typeof annotation.note === 'string' &&
+        Number.isFinite(annotation.lat) && annotation.lat >= -90 && annotation.lat <= 90 &&
+        Number.isFinite(annotation.lng) && annotation.lng >= -180 && annotation.lng <= 180;
+}
+
 function validateBackupRoute(route) {
-    if (!isPlainRouteObject(route) || !isRouteGeoJson(route.geojson)) return false;
+    if (!isPlainRouteObject(route) || !isRouteGeoJson(route.geojson) || !hasValidRouteCoordinates(route.geojson)) return false;
     if (route.name !== undefined && typeof route.name !== 'string') return false;
     if (route.color !== undefined && typeof route.color !== 'string') return false;
     if (route.id !== undefined && (typeof route.id !== 'string' || !route.id)) return false;
     if (route.sourceRouteId !== undefined && (typeof route.sourceRouteId !== 'string' || !route.sourceRouteId)) return false;
+    if (route.annotations !== undefined && (!Array.isArray(route.annotations) || !route.annotations.every(hasValidRouteAnnotation))) return false;
     if (route.activity !== undefined) {
         const activity = route.activity;
         if (!isPlainRouteObject(activity) || typeof activity.type !== 'string' || !activity.type ||
@@ -293,16 +303,17 @@ function routeLineCoordinates(geojson) {
 }
 
 function hasValidRouteCoordinates(geojson) {
-    let pointCount = 0;
     let valid = true;
     const checkLine = coordinates => {
         if (!Array.isArray(coordinates)) { valid = false; return; }
+        let pointCount = 0;
         coordinates.forEach(point => {
-            const lng = Number(point && point[0]);
-            const lat = Number(point && point[1]);
-            if (!Array.isArray(point) || !Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) valid = false;
+            const lng = point && point[0];
+            const lat = point && point[1];
+            if (!Array.isArray(point) || point.length < 2 || !Number.isFinite(lng) || !Number.isFinite(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) valid = false;
             else pointCount++;
         });
+        if (pointCount < 2) valid = false;
     };
     const visit = item => {
         if (!item || typeof item !== 'object') { valid = false; return; }
@@ -317,7 +328,7 @@ function hasValidRouteCoordinates(geojson) {
         } else valid = false;
     };
     visit(geojson);
-    return valid && pointCount >= 2;
+    return valid;
 }
 
 function distanceBetweenCoordinates(a, b) {

@@ -186,6 +186,7 @@ let routeBackupNotice = '';
 let renamingRoute = false;
 let confirmingDelete = false;
 let routePanelNotice = '';
+let mapSwitchNoticeTimeout = null;
 let elevationRequesting = null;
 let elevationDisclosureOpen = false;
 let notePlacementMode = false;
@@ -1051,7 +1052,6 @@ function startNavigation(context) {
     return;
   }
   stopNormalLocateControls();
-  stopNormalLocateControls();
   const session = FieldMapsLiveLocation.createSession();
   const receive = session.onLocation;
   session.onLocation = function(position) {
@@ -1513,7 +1513,7 @@ window.clearRouteComparison = clearRouteComparison;
 
 function openRouteFromLibrary(mode, index) {
   clearRouteComparison();
-  if ((window.currentMode || 'uk') !== mode) window.switchMap(mode);
+  if ((window.currentMode || 'uk') !== mode && !window.switchMap(mode)) return;
   if (!window.loadRouteByIndex(mode, index)) return;
   panelView = 'details';
   drawingMode = false;
@@ -3394,8 +3394,35 @@ async function importSharedRoute(sharedRoute) {
 const sharedRoute = getSharedRouteFromUrl();
 if (sharedRoute) importSharedRoute(sharedRoute);
 
+function canSwitchMapMode() {
+  if (navigation || trackRecording) {
+    return { allowed: false, reason: 'Finish the current walk before switching maps.' };
+  }
+  if (drawingMode || editingMode || pathDraft || snapPreview || routedEdit || sharedRouteImport || notePlacementMode || noteDraft) {
+    return { allowed: false, reason: 'Finish or cancel the current route action before switching maps.' };
+  }
+  return { allowed: true };
+}
+
+function showMapSwitchBlockedMessage(message) {
+  routePanelNotice = message;
+  const status = document.getElementById('map-switch-notice');
+  if (!status) return;
+  status.textContent = message;
+  status.hidden = false;
+  window.clearTimeout(mapSwitchNoticeTimeout);
+  mapSwitchNoticeTimeout = window.setTimeout(() => { status.hidden = true; }, 4000);
+}
+
 // --- Remove draw toolbar if open before switching maps ---
 window.switchMap = function(mode) {
+  if (mode !== 'uk' && mode !== 'world') return false;
+  if (mode === currentMode) return true;
+  const eligibility = canSwitchMapMode();
+  if (!eligibility.allowed) {
+    showMapSwitchBlockedMessage(eligibility.reason);
+    return false;
+  }
   clearRouteComparison();
   let center, zoom;
   if (activeDrawControl) removeDrawToolbar();
@@ -3429,6 +3456,7 @@ window.switchMap = function(mode) {
   updateGlobeIcon();
   updateRouteFabLabel();
   saveMapState();
+  return true;
 };
 
 function isPracticalUKSearchLocation(lat, lng) {
@@ -3490,8 +3518,8 @@ function selectSearchResult(result) {
       if (!Number.isFinite(bng[0]) || !Number.isFinite(bng[1])) return;
     } catch (error) { return; }
   }
+  if (currentMode !== mode && !window.switchMap(mode)) return;
   clearSearchResultMarker();
-  if (currentMode !== mode) window.switchMap(mode);
   const map = mode === 'uk' ? mapUK : mapWorld;
   map.setView([result.lat, result.lng], getSearchResultZoom(mode, result.type));
   showSearchResultMarker(mode, result);

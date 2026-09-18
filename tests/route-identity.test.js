@@ -47,6 +47,22 @@ const backup = exportRouteBackup();
 assert.equal(backup.routes.uk[walkedIndex].id, walked.id);
 assert.equal(backup.routes.uk[walkedIndex].sourceRouteId, legacy.id);
 assert.equal(backup.routes.uk[walkedIndex].activity.type, 'walked');
+assert.equal(validateRouteBackup(backup).valid, true);
+
+function invalidBackup(mutator) {
+  const candidate = structuredClone(backup);
+  mutator(candidate.routes.uk[0]);
+  return candidate;
+}
+
+assert.equal(validateRouteBackup(invalidBackup(route => { route.geojson.coordinates[0] = [Infinity, 51]; })).valid, false);
+assert.equal(validateRouteBackup(invalidBackup(route => { route.geojson.coordinates[0] = [-1, 91]; })).valid, false);
+assert.equal(validateRouteBackup(invalidBackup(route => { route.geojson.coordinates = [[-1, 51]]; })).valid, false);
+assert.equal(validateRouteBackup(invalidBackup(route => { route.annotations = [{ id: 'note-1', title: 'Bad point', note: '', lat: 91, lng: -1 }]; })).valid, false);
+const beforeRejectedReplace = { uk: getRouteList('uk'), world: getRouteList('world') };
+assert.equal(applyRouteBackup(invalidBackup(route => { route.geojson.coordinates[0] = [NaN, 51]; }), 'replace').valid, false);
+assert.deepEqual(getRouteList('uk'), beforeRejectedReplace.uk);
+assert.deepEqual(getRouteList('world'), beforeRejectedReplace.world);
 assert.equal(applyRouteBackup(backup, 'merge').valid, true);
 const merged = getRouteList('uk');
 const ids = merged.map(route => route.id);
