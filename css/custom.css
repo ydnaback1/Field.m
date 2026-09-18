@@ -461,6 +461,102 @@ select {
   list-style: none;
 }
 
+.route-walk-history {
+  margin: -3px 10px 2px 60px;
+}
+
+#panel-content .route-walk-history-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 3px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--muted-text);
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.route-walk-history-toggle i {
+  transition: transform 160ms ease;
+}
+
+.route-walk-history.is-expanded .route-walk-history-toggle i {
+  transform: rotate(180deg);
+}
+
+.route-walk-history-list {
+  display: grid;
+  gap: 4px;
+  margin: 3px 0 5px;
+  padding: 0;
+  list-style: none;
+}
+
+#panel-content .route-walk-history-row {
+  width: 100%;
+  min-height: 54px;
+  padding: 7px 5px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface-hover);
+  color: var(--panel-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.route-walk-history-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  color: var(--route-color, var(--accent-strong));
+  font-size: 0.78rem;
+}
+
+.route-walk-history-copy {
+  min-width: 0;
+}
+
+.route-walk-history-title,
+.route-walk-history-meta {
+  display: block;
+}
+
+.route-walk-history-title {
+  overflow: hidden;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.route-walk-history-meta,
+.route-recorded-label {
+  color: var(--muted-text);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.route-walk-history-row > i {
+  margin-right: 3px;
+  color: var(--muted-text);
+  font-size: 0.72rem;
+}
+
+.route-recorded-label {
+  display: block;
+  margin: -4px 12px 5px 60px;
+}
+
 #panel-content .route-library-row {
   width: 100%;
   min-height: 76px;
