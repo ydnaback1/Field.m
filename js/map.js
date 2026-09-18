@@ -89,6 +89,10 @@ const routeProfileMarkerWorld = new L.FeatureGroup().addTo(mapWorld);
 // an in-progress walk can never change the saved planned route geometry.
 const navigationLayerUK = new L.FeatureGroup().addTo(mapUK);
 const navigationLayerWorld = new L.FeatureGroup().addTo(mapWorld);
+// Comparison rendering is intentionally separate from saved route layers. It is
+// a short-lived map view, never part of a route record or its GeoJSON.
+const routeComparisonLayerUK = new L.FeatureGroup().addTo(mapUK);
+const routeComparisonLayerWorld = new L.FeatureGroup().addTo(mapWorld);
 
 // Base layers
 var ukBaseLayers = getUKBaseLayers(serviceUrl, apiKey);
@@ -190,6 +194,7 @@ let trackSummary = null;
 let confirmingTrackDiscard = false;
 let navigationWakeLock = null;
 let navigationElevationOpen = false;
+let routeComparison = null;
 const ROUTE_COLOR_CHOICES = [
   { value: '#ff33da', label: 'Magenta' },
   { value: '#3388ff', label: 'Blue' },
@@ -227,6 +232,7 @@ const routeDisplayMode = { uk: 'solid', world: 'solid' };
 
 function getRouteLayer(mode) { return mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld; }
 function getRouteSteepnessLayer(mode) { return mode === 'uk' ? routeSteepnessLayerUK : routeSteepnessLayerWorld; }
+function getRouteComparisonLayer(mode) { return mode === 'uk' ? routeComparisonLayerUK : routeComparisonLayerWorld; }
 
 function setSolidRouteVisibility(mode, route, visible) {
   const style = { ...window.getRouteStyle(mode, route), opacity: visible ? 1 : 0 };
@@ -830,6 +836,7 @@ function startTrackRecording() {
     showRoutePanelContent();
     return;
   }
+  clearRouteComparison();
   const session = FieldMapsLiveLocation.createSession();
   const receive = session.onLocation;
   session.onLocation = function(position) {
@@ -1033,6 +1040,7 @@ function startNavigation(context) {
     showRoutePanelContent();
     return;
   }
+  clearRouteComparison();
   if (typeof routeLineCoordinates !== 'function' || routeLineCoordinates(context.route.geojson).length < 2) {
     routePanelNotice = 'This route needs at least two points before it can be walked.';
     showRoutePanelContent();
@@ -1385,7 +1393,122 @@ function formatLibraryDistance(km) {
   return `${value.toLocaleString(undefined, { maximumFractionDigits: value < 10 ? 1 : 0 })} km`;
 }
 
+function getComparableWalkPair(planned, walked) {
+  if (!planned || !walked || planned.mode !== walked.mode ||
+      walked.route.sourceRouteId !== planned.route.id ||
+      !hasValidRouteCoordinates(planned.route.geojson) ||
+      !hasValidRouteCoordinates(walked.route.geojson)) return null;
+  return { mode: planned.mode, planned, walked };
+}
+
+function canCompareWalk(planned, walked) {
+  return Boolean(getComparableWalkPair(planned, walked) && !navigation && !trackRecording);
+}
+
+function clearRouteComparison() {
+  routeComparison = null;
+  routeComparisonLayerUK.clearLayers();
+  routeComparisonLayerWorld.clearLayers();
+}
+
+function formatComparisonDifference(plannedKm, walkedKm) {
+  const difference = Number(walkedKm) - Number(plannedKm);
+  if (!Number.isFinite(difference)) return '';
+  const magnitude = Math.abs(difference);
+  return `${difference >= 0 ? '+' : '-'}${magnitude.toLocaleString(undefined, { maximumFractionDigits: magnitude < 10 ? 1 : 0 })} km`;
+}
+
+function beginRouteComparison(planned, walked) {
+  const pair = getComparableWalkPair(planned, walked);
+  if (!pair || navigation || trackRecording) return;
+
+  clearRouteComparison();
+  clearSteepnessDisplay(pair.mode);
+  getRouteLayer(pair.mode).clearLayers();
+  (pair.mode === 'uk' ? window.routeNotesLayerUK : window.routeNotesLayerWorld).clearLayers();
+  window.currentRouteIndex[pair.mode] = null;
+
+  const comparisonLayer = getRouteComparisonLayer(pair.mode);
+  const plannedColor = window.getRouteColor(pair.mode, pair.planned.route);
+  // A light casing keeps the dark dashed walked line legible on every base map;
+  // the dash pattern and drawer key make the distinction independent of colour.
+  L.geoJSON(pair.planned.route.geojson, { style: { color: plannedColor, weight: 5, opacity: 1 } })
+    .eachLayer(layer => comparisonLayer.addLayer(layer));
+  L.geoJSON(pair.walked.route.geojson, { style: { color: '#ffffff', weight: 5, opacity: 0.9, interactive: false } })
+    .eachLayer(layer => comparisonLayer.addLayer(layer));
+  L.geoJSON(pair.walked.route.geojson, { style: { color: '#18212b', weight: 3, opacity: 1, dashArray: '8 7', lineCap: 'butt', interactive: false } })
+    .eachLayer(layer => comparisonLayer.addLayer(layer));
+
+  const bounds = comparisonLayer.getBounds();
+  if (!bounds.isValid()) {
+    clearRouteComparison();
+    return;
+  }
+  routeComparison = { ...pair, layers: comparisonLayer };
+  panelView = 'comparison';
+  setRoutePanelOpen(true);
+  window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+    if (routeComparison?.planned === pair.planned) fitRouteBoundsToVisibleMap(pair.mode, bounds);
+  }));
+}
+
+function endRouteComparison() {
+  if (!routeComparison) return;
+  clearRouteComparison();
+  panelView = 'library';
+  routePanelNotice = '';
+  showRoutePanelContent();
+  updateRouteFabLabel();
+}
+
+function openComparisonRoute(item) {
+  clearRouteComparison();
+  openRouteFromLibrary(item.mode, item.index);
+}
+
+function showRouteComparison() {
+  const comparison = routeComparison;
+  if (!comparison) {
+    panelView = 'library';
+    showRoutePanelContent();
+    return;
+  }
+  const plannedMetrics = getRouteMetrics(comparison.planned.route);
+  const walkedMetrics = getRouteMetrics(comparison.walked.route);
+  const plannedDistance = formatLibraryDistance(plannedMetrics.km);
+  const walkedDistance = formatLibraryDistance(walkedMetrics.km);
+  const walkedDate = Date.parse(comparison.walked.route.activity?.endedAt || comparison.walked.route.activity?.startedAt || '');
+  const walkedDateLabel = Number.isFinite(walkedDate) ? formatRecordedWalkDate(comparison.walked.route) : '';
+  const walkedDuration = formatRecordedWalkDuration(comparison.walked.route);
+  const difference = formatComparisonDifference(plannedMetrics.km, walkedMetrics.km);
+  panel.classList.remove('library-view', 'library-scroll-view');
+  panel.setAttribute('aria-label', 'Compare planned route and walked track');
+  panelContent.className = 'route-detail-content route-comparison-content';
+  panelContent.innerHTML = `
+    <div class="panel-heading workflow-heading route-comparison-heading">
+      <div class="panel-eyebrow">Compare walk</div>
+      <h2 class="route-title">Planned vs walked</h2>
+    </div>
+    <section class="route-comparison-summary" aria-label="Comparison summary">
+      <div><span>Planned</span><strong>${escapeHtml(comparison.planned.route.name || 'Untitled route')}</strong><small>${escapeHtml(plannedDistance || 'Distance unavailable')}</small></div>
+      <div><span>Walked${walkedDateLabel ? ` · ${escapeHtml(walkedDateLabel)}` : ''}</span><strong>${escapeHtml(walkedDistance || 'Distance unavailable')}${walkedDuration ? ` · ${escapeHtml(walkedDuration)}` : ''}</strong></div>
+      ${difference ? `<div class="route-comparison-difference"><span>Distance difference</span><strong>${escapeHtml(difference)}</strong></div>` : ''}
+    </section>
+    <div class="route-comparison-key" aria-label="Map key"><span><i class="route-comparison-key-planned" aria-hidden="true"></i>Planned</span><span><i class="route-comparison-key-walked" aria-hidden="true"></i>Walked</span></div>
+    <div class="route-actions-row route-comparison-actions">
+      <button id="open-comparison-planned" class="panel-action" type="button">Open planned</button>
+      <button id="open-comparison-walked" class="panel-action" type="button">Open walked</button>
+      <button id="end-route-comparison" class="secondary-action" type="button">End comparison</button>
+    </div>`;
+  panelContent.querySelector('#open-comparison-planned').onclick = () => openComparisonRoute(comparison.planned);
+  panelContent.querySelector('#open-comparison-walked').onclick = () => openComparisonRoute(comparison.walked);
+  panelContent.querySelector('#end-route-comparison').onclick = endRouteComparison;
+}
+
+window.clearRouteComparison = clearRouteComparison;
+
 function openRouteFromLibrary(mode, index) {
+  clearRouteComparison();
   if ((window.currentMode || 'uk') !== mode) window.switchMap(mode);
   if (!window.loadRouteByIndex(mode, index)) return;
   panelView = 'details';
@@ -1411,6 +1534,7 @@ function isMobileDrawerLayout() {
 }
 
 function getAppropriateRoutePanelView() {
+  if (routeComparison) return 'comparison';
   return getActiveRouteContext() ? 'details' : 'library';
 }
 
@@ -1425,6 +1549,7 @@ function openRoutesPanel() {
 }
 
 function openSettingsPanel() {
+  clearRouteComparison();
   if (panelView === 'details' || panelView === 'library') {
     routePanelViewBeforeSettings = panelView;
   } else {
@@ -1586,6 +1711,15 @@ function renderRouteLibraryResults() {
           childButton.onclick = function() { openRouteFromLibrary(child.mode, child.index); };
           const childItem = document.createElement('li');
           childItem.appendChild(childButton);
+          if (canCompareWalk(item, child)) {
+            const compareButton = document.createElement('button');
+            compareButton.type = 'button';
+            compareButton.className = 'route-walk-history-compare';
+            compareButton.textContent = 'Compare';
+            compareButton.setAttribute('aria-label', `Compare recorded walk with ${routeName}`);
+            compareButton.onclick = function() { beginRouteComparison(item, child); };
+            childItem.appendChild(compareButton);
+          }
           childList.appendChild(childItem);
         });
         history.appendChild(childList);
@@ -1636,6 +1770,7 @@ async function readRouteBackupFile(file) {
 }
 
 function clearActiveRoutesAfterBackupImport() {
+  clearRouteComparison();
   clearSteepnessDisplay('uk');
   clearSteepnessDisplay('world');
   window.currentRouteIndex.uk = null;
@@ -1833,6 +1968,7 @@ function showSettings() {
 }
 
 function startRouteDrawing() {
+  clearRouteComparison();
   drawingMode = true;
   editingMode = false;
   panelView = 'details';
@@ -2364,6 +2500,7 @@ function showRouteLibrary() {
 }
 
 function openRouteCreationOptions() {
+  clearRouteComparison();
   if (navigation || trackRecording || trackSummary) {
     routePanelNotice = 'Finish, save, or discard the active recording before creating another route.';
     showRoutePanelContent();
@@ -2836,6 +2973,10 @@ function showRoutePanelContent() {
     showSnapPreview();
     return;
   }
+  if (panelView === 'comparison' && routeComparison) {
+    showRouteComparison();
+    return;
+  }
   if (navigation) {
     showNavigationMode();
     return;
@@ -3251,6 +3392,7 @@ if (sharedRoute) importSharedRoute(sharedRoute);
 
 // --- Remove draw toolbar if open before switching maps ---
 window.switchMap = function(mode) {
+  clearRouteComparison();
   let center, zoom;
   if (activeDrawControl) removeDrawToolbar();
   if (panel.classList.contains('open')) {

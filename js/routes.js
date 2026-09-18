@@ -507,6 +507,7 @@ function updateRouteListUI(mode) {
 window.currentRouteIndex = { uk: null, world: null };
 
 function loadRouteByIndex(mode, idx) {
+    if (typeof window.clearRouteComparison === 'function') window.clearRouteComparison();
     const routes = getRouteList(mode);
     if (!routes[idx] || !routes[idx].geojson || !hasValidRouteCoordinates(routes[idx].geojson)) return false;
     const route = routes[idx];
