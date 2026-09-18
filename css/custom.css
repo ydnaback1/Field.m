@@ -994,6 +994,28 @@ select {
   display: none;
 }
 
+.map-switch-notice {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 14px);
+  left: 50%;
+  z-index: 1300;
+  max-width: min(360px, calc(100vw - 28px));
+  padding: 10px 13px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface-light);
+  color: var(--panel-text);
+  box-shadow: var(--shadow-strong);
+  font-size: 0.86rem;
+  font-weight: 700;
+  text-align: center;
+  transform: translateX(-50%);
+}
+
+.map-switch-notice[hidden] {
+  display: none;
+}
+
 .app-update-notice button {
   border: 0;
   border-radius: 8px;
@@ -1766,6 +1788,21 @@ select {
 
 @media (prefers-reduced-motion: reduce) {
   .navigation-position-marker .navigation-position-halo { animation: none; opacity: 0.14; }
+
+  #bottom-panel,
+  .leaflet-top.leaflet-right,
+  .globe-btn,
+  #panel-close,
+  #panel-content input,
+  #panel-content select,
+  #panel-content button,
+  #fab-route,
+  .route-walk-history-toggle i,
+  .route-disclosure summary > i,
+  .route-more-actions summary i,
+  .navigation-elevation summary i {
+    transition: none;
+  }
 }
 
 .navigation-elevation {
