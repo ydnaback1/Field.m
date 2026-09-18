@@ -93,6 +93,10 @@ const navigationLayerWorld = new L.FeatureGroup().addTo(mapWorld);
 // a short-lived map view, never part of a route record or its GeoJSON.
 const routeComparisonLayerUK = new L.FeatureGroup().addTo(mapUK);
 const routeComparisonLayerWorld = new L.FeatureGroup().addTo(mapWorld);
+// Search results are transient map-navigation state, intentionally outside all
+// route, navigation and saved-data layers.
+const searchResultLayerUK = new L.FeatureGroup().addTo(mapUK);
+const searchResultLayerWorld = new L.FeatureGroup().addTo(mapWorld);
 
 // Base layers
 var ukBaseLayers = getUKBaseLayers(serviceUrl, apiKey);
@@ -3426,6 +3430,88 @@ window.switchMap = function(mode) {
   updateRouteFabLabel();
   saveMapState();
 };
+
+function isPracticalUKSearchLocation(lat, lng) {
+  // EPSG:27700 covers Great Britain, not a dynamically selected CRS. Keep a
+  // small practical envelope so UK searches use the detailed UK map without
+  // making worldwide results inaccessible.
+  return Number.isFinite(lat) && Number.isFinite(lng) && lat >= 49 && lat <= 61.5 && lng >= -8.75 && lng <= 2.5;
+}
+
+function getSearchResultZoom(mode, type) {
+  const closeTypes = new Set(['address', 'venue', 'poi', 'postcode', 'street']);
+  const mediumTypes = new Set(['locality', 'localadmin', 'neighbourhood']);
+  const requested = mode === 'uk'
+    ? (closeTypes.has(type) ? 9 : mediumTypes.has(type) ? 6 : 4)
+    : (closeTypes.has(type) ? 16 : mediumTypes.has(type) ? 12 : 9);
+  const map = mode === 'uk' ? mapUK : mapWorld;
+  const minZoom = Number.isFinite(map.getMinZoom()) ? map.getMinZoom() : 0;
+  const maxZoom = Number.isFinite(map.getMaxZoom()) ? map.getMaxZoom() : (mode === 'uk' ? 12 : 18);
+  return Math.max(minZoom, Math.min(maxZoom, requested));
+}
+
+function clearSearchResultMarker() {
+  searchResultLayerUK.clearLayers();
+  searchResultLayerWorld.clearLayers();
+  window.FieldMapsSearch?.clearSelection?.();
+}
+
+function showSearchResultMarker(mode, result) {
+  const layer = mode === 'uk' ? searchResultLayerUK : searchResultLayerWorld;
+  layer.clearLayers();
+  const marker = L.marker([result.lat, result.lng], {
+    interactive: false,
+    keyboard: false,
+    icon: L.divIcon({
+      className: 'field-search-marker',
+      html: '<i class="fa-solid fa-location-dot" aria-hidden="true"></i>',
+      iconSize: [28, 28],
+      iconAnchor: [14, 28]
+    })
+  });
+  layer.addLayer(marker);
+  marker.bindTooltip(result.label, {
+    permanent: true,
+    direction: 'top',
+    offset: [0, -22],
+    className: 'field-search-marker-label'
+  });
+}
+
+function selectSearchResult(result) {
+  if (!window.FieldMapsSearch?.validCoordinate?.(result.lat, result.lng) || getLiveLocationSession()) return;
+  if (routeComparison) endRouteComparison();
+  const mode = isPracticalUKSearchLocation(result.lat, result.lng) ? 'uk' : 'world';
+  if (mode === 'uk') {
+    // Explicitly validate the WGS84-to-BNG transform before Leaflet's CRS uses
+    // the same projection to centre the UK map.
+    try {
+      const bng = proj4('EPSG:4326', 'EPSG:27700', [result.lng, result.lat]);
+      if (!Number.isFinite(bng[0]) || !Number.isFinite(bng[1])) return;
+    } catch (error) { return; }
+  }
+  clearSearchResultMarker();
+  if (currentMode !== mode) window.switchMap(mode);
+  const map = mode === 'uk' ? mapUK : mapWorld;
+  map.setView([result.lat, result.lng], getSearchResultZoom(mode, result.type));
+  showSearchResultMarker(mode, result);
+  window.FieldMapsSearch?.updateSelection?.(result);
+}
+
+window.FieldMapsSearch?.setContextProvider?.(() => {
+  const map = currentMode === 'uk' ? mapUK : mapWorld;
+  const center = map.getCenter();
+  return { lat: center.lat, lng: center.lng };
+});
+window.FieldMapsSearch?.setOpenGuard?.(() => {
+  if (getLiveLocationSession()) return false;
+  // Comparison's purpose is a temporary focused map view. Searching ends it
+  // through the existing cleanup path before the map is moved.
+  if (routeComparison) endRouteComparison();
+  return true;
+});
+window.FieldMapsSearch?.setSelectionHandler?.(selectSearchResult);
+window.FieldMapsSearch.clearMarker = clearSearchResultMarker;
 
 // Update globe icon color based on currentMode
 function updateGlobeIcon() {

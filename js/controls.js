@@ -118,6 +118,7 @@ function addUKControls(map, baseLayers) {
     map._fieldMapsLocateControl = locateControl;
     preventLocateDuringLiveSession(map, locateControl);
     labelControl(locateControl, 'a', 'Find my location');
+    createSearchControl(map);
     createMeasureControl(map, '#FF0080');
     L.control.scale({
         position: 'bottomleft',
@@ -137,6 +138,7 @@ function addWorldControls(map) {
     map._fieldMapsLocateControl = locateControl;
     preventLocateDuringLiveSession(map, locateControl);
     labelControl(locateControl, 'a', 'Find my location');
+    createSearchControl(map);
     createMeasureControl(map, '#3388ff');
     L.control.scale({
         position: 'bottomleft',
