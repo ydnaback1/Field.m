@@ -1,6 +1,7 @@
 // js/layers.js
 
-const UK_BASE_MAX_ZOOM = 22;
+// EPSG:27700 has configured resolutions (and OS tiles) only through z13.
+const UK_BASE_MAX_ZOOM = 13;
 
 function getUKBaseLayers(serviceUrl, apiKey) {
     return {

@@ -52,7 +52,8 @@ function migrateStoredRouteIds() {
     const usedIds = new Set();
     ['uk', 'world'].forEach(mode => {
         if (ensureRouteListIds(lists[mode], usedIds)) {
-            localStorage.setItem(`routeList_${mode}`, JSON.stringify(lists[mode]));
+            try { localStorage.setItem(`routeList_${mode}`, JSON.stringify(lists[mode])); }
+            catch (_) { /* A full/blocked store must not prevent the map from starting. */ }
         }
     });
 }
@@ -304,7 +305,9 @@ function routeLineCoordinates(geojson) {
 
 function hasValidRouteCoordinates(geojson) {
     let valid = true;
+    let lineCount = 0;
     const checkLine = coordinates => {
+        lineCount++;
         if (!Array.isArray(coordinates)) { valid = false; return; }
         let pointCount = 0;
         coordinates.forEach(point => {
@@ -328,7 +331,7 @@ function hasValidRouteCoordinates(geojson) {
         } else valid = false;
     };
     visit(geojson);
-    return valid;
+    return valid && lineCount > 0;
 }
 
 function distanceBetweenCoordinates(a, b) {
@@ -408,27 +411,33 @@ async function fetchRouteElevation(mode, idx) {
     const geometryAtRequest = JSON.stringify(route.geojson);
     const coordinates = sampleRouteLine(route.geojson);
     if (coordinates.length < 2) throw new Error('Route needs at least two distinct points');
-    const response = await fetch('https://api.heigit.org/openelevationservice/v0/line', {
-        method: 'POST',
-        headers: { Authorization: CONFIG.orsApiKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ format_in: 'geojson', format_out: 'geojson', geometry: { type: 'LineString', coordinates } })
-    });
-    if (!response.ok) throw new Error('Elevation request failed');
-    const returned = returnedElevationCoordinates(await response.json());
-    if (returned.length < 2) throw new Error('Elevation response was incomplete');
-    const samples = returned.map((point, index) => ({
-        distance: index === 0 ? 0 : undefined,
-        elevation: Number(point[2]),
-        lat: Number(point[1]),
-        lng: Number(point[0])
-    }));
-    for (let index = 1; index < samples.length; index++) {
-        samples[index].distance = samples[index - 1].distance + distanceBetweenCoordinates([samples[index - 1].lng, samples[index - 1].lat], [samples[index].lng, samples[index].lat]);
-    }
-    const elevation = { provider: 'ors', samples, summary: elevationSummary(samples), fetchedAt: new Date().toISOString() };
-    if (JSON.stringify(getRouteList(mode)[idx]?.geojson) !== geometryAtRequest) throw new Error('Route geometry changed while elevation was loading');
-    if (!updateRouteElevationInList(mode, idx, elevation)) throw new Error('Route was changed while elevation was loading');
-    return elevation;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    try {
+      const response = await fetch('https://api.heigit.org/openelevationservice/v0/line', {
+          method: 'POST',
+          signal: controller.signal,
+          headers: { Authorization: CONFIG.orsApiKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ format_in: 'geojson', format_out: 'geojson', geometry: { type: 'LineString', coordinates } })
+      });
+      if (!response.ok) throw new Error('Elevation request failed');
+      const returned = returnedElevationCoordinates(await response.json());
+      if (returned.length < 2) throw new Error('Elevation response was incomplete');
+      const samples = returned.map((point, index) => ({
+          distance: index === 0 ? 0 : undefined,
+          elevation: Number(point[2]),
+          lat: Number(point[1]),
+          lng: Number(point[0])
+      }));
+      for (let index = 1; index < samples.length; index++) {
+          samples[index].distance = samples[index - 1].distance + distanceBetweenCoordinates([samples[index - 1].lng, samples[index - 1].lat], [samples[index].lng, samples[index].lat]);
+      }
+      const elevation = { provider: 'ors', samples, summary: elevationSummary(samples), fetchedAt: new Date().toISOString() };
+      const current = getRouteList(mode)[idx];
+      if (current?.id !== route.id || JSON.stringify(current?.geojson) !== geometryAtRequest) throw new Error('Route changed while elevation was loading');
+      if (!updateRouteElevationInList(mode, idx, elevation)) throw new Error('Route was changed while elevation was loading');
+      return elevation;
+    } finally { clearTimeout(timeout); }
 }
 
 function renameRouteInList(mode, idx, name) {

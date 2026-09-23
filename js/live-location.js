@@ -180,6 +180,7 @@
         return false;
       }
       this.error = null;
+      this.latestPosition = null;
       this.watcherId = global.navigator.geolocation.watchPosition(
         browserPosition => this.receive(browserPosition), error => this.receiveError(error),
         { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
@@ -239,6 +240,10 @@
       finishRecording() { if (!this.recording) return null; this.recording.finishedAt = Date.now(); const result = this.getRecording(); result.status = 'finished'; result.geojson = recordingGeoJSON(this.recording.points); this.recording.status = 'finished'; this.stop(); return result; },
       resumeFinishedRecording() {
         if (!this.recording || this.recording.status !== 'finished') return this.getRecording();
+        if (this.recording.pausedAt !== null) {
+          this.recording.pausedDuration += this.recording.finishedAt - this.recording.pausedAt;
+          this.recording.pausedAt = null;
+        }
         this.recording.pausedDuration += Date.now() - this.recording.finishedAt;
         this.recording.finishedAt = null;
         this.recording.pendingResume = true;

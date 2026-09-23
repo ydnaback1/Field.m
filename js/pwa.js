@@ -1,5 +1,4 @@
 (() => {
-  const CACHE_PREFIX = "field-maps-app-";
   const updateNotice = document.getElementById("app-update-notice");
   const updateNowButton = document.getElementById("app-update-now");
   const updateLabel = updateNotice?.querySelector("span");
@@ -15,6 +14,7 @@
   let waitingWasShown = false;
   let updateTarget = null;
   let controllerBeforeUpdate = null;
+  let updateNeedsReload = false;
   let installEvent = null;
   let installDismissed = false;
   let installReady = false;
@@ -85,10 +85,11 @@
   function requestBuildId(worker) {
     return new Promise((resolve) => {
       const channel = new MessageChannel();
-      const timeout = window.setTimeout(() => resolve(null), 1200);
+      const finish = value => { channel.port1.close(); resolve(value); };
+      const timeout = window.setTimeout(() => finish(null), 1200);
       channel.port1.onmessage = (event) => {
         window.clearTimeout(timeout);
-        resolve(
+        finish(
           event.data?.type === "FIELD_MAPS_BUILD_ID"
             ? event.data.buildId
             : null,
@@ -119,20 +120,30 @@
     showWaitingWorker(registration);
     return registration.waiting
       ? "Update available."
+      : registration.installing
+      ? "An update is downloading. Use Update now when it is ready."
       : "App files are up to date.";
   }
 
   async function refreshAppFiles() {
     if (!("caches" in window))
       return "App file storage is unavailable in this browser.";
-    const cacheNames = await caches.keys();
-    await Promise.all(
-      cacheNames
-        .filter((cacheName) => cacheName.startsWith(CACHE_PREFIX))
-        .map((cacheName) => caches.delete(cacheName)),
-    );
     const registration = await registerWorker();
-    if (registration) await registration.update();
+    if (!registration?.active) throw new Error('App files are not ready yet.');
+    const refreshed = await new Promise((resolve) => {
+      const channel = new MessageChannel();
+      const finish = value => {
+        window.clearTimeout(timeout);
+        channel.port1.close();
+        resolve(value);
+      };
+      const timeout = window.setTimeout(() => finish(false), 30000);
+      channel.port1.onmessage = event => finish(event.data?.ok === true);
+      try { registration.active.postMessage({ type: "REFRESH_APP_FILES" }, [channel.port2]); }
+      catch (_) { finish(false); }
+    });
+    if (!refreshed) throw new Error('Could not refresh app files. Existing offline files were kept.');
+    await registration.update();
     window.location.reload();
     return "Refreshing app files…";
   }
@@ -140,11 +151,16 @@
   async function activateWaitingUpdate() {
     const registration = await registerWorker();
     if (updateState !== "idle") return;
+    if (updateNeedsReload) {
+      if (window.FieldMapsHasLiveSession?.() && !window.confirm("Reloading will discard unsaved route work or end your recording/navigation session. Reload now?")) return;
+      reloadForNewController();
+      return;
+    }
     if (!registration?.waiting) {
       showWaitingWorker(registration || { waiting: null });
       return;
     }
-    if (window.FieldMapsHasLiveSession?.() && !window.confirm("Updating will end your live recording or navigation session. Update now?")) return;
+    if (window.FieldMapsHasLiveSession?.() && !window.confirm("Updating will discard unsaved route work or end your recording/navigation session. Update now?")) return;
     updateTarget = registration.waiting;
     controllerBeforeUpdate = navigator.serviceWorker.controller;
     updateState = "updating";
@@ -197,7 +213,13 @@
       reloadForNewController();
     } else if (updateState === "idle" && waitingWasShown) {
       // Another tab may have activated the update while this page was open.
-      reloadForNewController();
+      if (window.FieldMapsHasLiveSession?.()) {
+        updateNeedsReload = true;
+        updateNotice.hidden = false;
+        updateLabel.textContent = "Update ready";
+        updateNowButton.textContent = "Reload";
+        showNotices();
+      } else reloadForNewController();
     }
   });
   window.addEventListener("beforeinstallprompt", (event) => {

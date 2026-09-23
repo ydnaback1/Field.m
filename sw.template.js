@@ -71,6 +71,16 @@ self.addEventListener("message", (event) => {
   if (event.data?.type === "GET_BUILD_ID" && event.ports[0]) {
     event.ports[0].postMessage({ type: "FIELD_MAPS_BUILD_ID", buildId: BUILD_ID });
   }
+  if (event.data?.type === "REFRESH_APP_FILES" && event.ports[0]) {
+    // Cache.addAll commits its batch atomically. Keep the working shell when
+    // offline or when any asset fails, and never touch managed map packs.
+    event.waitUntil(caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(APP_ASSETS.map(asset => new Request(
+        new URL(asset, self.location.href), { cache: "reload" }
+      ))))
+      .then(() => event.ports[0].postMessage({ ok: true }),
+        () => event.ports[0].postMessage({ ok: false })));
+  }
 });
 
 self.addEventListener("fetch", (event) => {

@@ -7,16 +7,16 @@ proj4.defs("EPSG:27700", "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=4
 function getEquivalentWorldZoom(bngZoom) {
   const match = {
     0: 7, 1: 8, 2: 9, 3: 10, 4: 11, 5: 12,
-    6: 13, 7: 14, 8: 15, 9: 16, 10: 17, 11: 18, 12: 18
+    6: 13, 7: 14, 8: 15, 9: 16, 10: 17, 11: 18, 12: 18, 13: 19
   };
   return match[bngZoom] || 9;
 }
 function getEquivalentUKZoom(osmZoom) {
   const match = {
     7: 0, 8: 1, 9: 2, 10: 3, 11: 4, 12: 5,
-    13: 6, 14: 7, 15: 8, 16: 9, 17: 10, 18: 11
+    13: 6, 14: 7, 15: 8, 16: 9, 17: 10, 18: 11, 19: 12
   };
-  return match[osmZoom] || 7;
+  return match[osmZoom] ?? (osmZoom < 7 ? 0 : 7);
 }
 
 // Transform BNG to WGS84 for initial center
@@ -29,23 +29,31 @@ var worldInitialCenter = ukInitialCenter;
 var worldInitialZoom = getEquivalentWorldZoom(ukInitialZoom);
 
 // Restore last map state if available
-let savedMode = localStorage.getItem('lastMode');
-let savedCenter = localStorage.getItem('lastCenter');
-let savedZoom = localStorage.getItem('lastZoom');
+let savedMode, savedCenter, savedZoom;
+try {
+  savedMode = localStorage.getItem('lastMode');
+  savedCenter = localStorage.getItem('lastCenter');
+  savedZoom = localStorage.getItem('lastZoom');
+} catch (_) { /* Map preferences are optional when browser storage is blocked. */ }
 if (savedCenter && savedZoom) {
   try {
     savedCenter = JSON.parse(savedCenter);
     savedZoom = Number(savedZoom);
+    if (!Array.isArray(savedCenter) || savedCenter.length !== 2 ||
+        !savedCenter.every(Number.isFinite) || Math.abs(savedCenter[0]) > 90 ||
+        Math.abs(savedCenter[1]) > 180 || !Number.isFinite(savedZoom)) throw new Error('Invalid map state');
     if (savedMode === 'world') {
       worldInitialCenter = savedCenter;
-      worldInitialZoom = savedZoom;
+      worldInitialZoom = Math.max(0, Math.min(19, savedZoom));
     } else {
       ukInitialCenter = savedCenter;
-      ukInitialZoom = savedZoom;
+      ukInitialZoom = Math.max(0, Math.min(UK_BASE_MAX_ZOOM, savedZoom));
     }
   } catch (e) {}
 }
-var currentMode = savedMode || 'uk';
+var currentMode = savedMode === 'world' ? 'world' : 'uk';
+document.getElementById('map-uk').style.display = currentMode === 'uk' ? 'block' : 'none';
+document.getElementById('map-world').style.display = currentMode === 'world' ? 'block' : 'none';
 
 const serviceUrl = CONFIG.serviceUrl;
 const apiKey = CONFIG.apiKey;
@@ -138,20 +146,7 @@ const worldDrawOpts = {
   }
 };
 
-if (L.Draw.Polyline) {
-  L.Draw.Polyline.include({
-    _onTouch: function(e) {
-      // Only allow double-tap to finish if more than 2 points (i.e., after 3rd point)
-      if (this._markers.length < 2) {
-        // Prevent default Leaflet Draw double-tap behavior when only one segment
-        e.preventDefault();
-        return false;
-      }
-      // Otherwise, fallback to default (which allows finish)
-      return L.Handler.prototype._onTouch.call(this, e);
-    }
-  });
-}
+// Keep Leaflet.draw's own touch handler: L.Handler has no _onTouch method.
 
 
 // --- Panel, FAB, and Draw Control State ---
@@ -195,10 +190,11 @@ let selectedAnnotationId = null;
 let navigation = null;
 let navigationSummary = null;
 let trackRecording = null;
-window.FieldMapsHasLiveSession = () => Boolean(navigation || trackRecording);
+window.FieldMapsHasLiveSession = () => Boolean(navigation || trackRecording || navigationSummary || trackSummary || drawingMode || editingMode);
 let trackSummary = null;
 let confirmingTrackDiscard = false;
 let navigationWakeLock = null;
+let navigationWakeLockRequest = null;
 let navigationElevationOpen = false;
 let routeComparison = null;
 const ROUTE_COLOR_CHOICES = [
@@ -467,16 +463,19 @@ function getRouteMetrics(routeOrGeojson) {
   const route = routeOrGeojson?.geojson ? routeOrGeojson : null;
   const geojson = route?.geojson || routeOrGeojson;
   if (!geojson) return { km: "", mi: "", timeStr: "" };
-  const layer = L.geoJSON(geojson);
   let totalMeters = 0;
-  layer.eachLayer(l => {
-    if (l instanceof L.Polyline) {
-      const latlngs = l.getLatLngs();
-      for (let i = 1; i < latlngs.length; i++) {
-        totalMeters += latlngs[i - 1].distanceTo(latlngs[i]);
+  const measure = geometry => {
+    if (geometry.type === 'Feature') return measure(geometry.geometry);
+    if (geometry.type === 'FeatureCollection') return geometry.features.forEach(measure);
+    const lines = geometry.type === 'LineString' ? [geometry.coordinates] : geometry.coordinates;
+    lines.forEach(line => {
+      for (let index = 1; index < line.length; index++) {
+        totalMeters += distanceBetweenCoordinates(line[index - 1], line[index]);
       }
-    }
-  });
+    });
+  };
+  if (!hasValidRouteCoordinates(geojson)) return { km: '', mi: '', timeStr: '' };
+  measure(geojson);
   if (!totalMeters) return { km: "", mi: "", timeStr: "" };
   const km = (totalMeters / 1000).toFixed(2);
   const mi = (totalMeters / 1609.344).toFixed(2);
@@ -716,18 +715,29 @@ function updateNavigationProfileIndicator() {
 }
 
 async function requestNavigationWakeLock() {
-  if (!getLiveLocationSession() || !navigator.wakeLock?.request || navigationWakeLock) return;
+  const live = getLiveLocationSession();
+  if (!live || !navigator.wakeLock?.request || navigationWakeLock || navigationWakeLockRequest) return;
+  const request = {};
+  navigationWakeLockRequest = request;
   try {
-    navigationWakeLock = await navigator.wakeLock.request('screen');
-    navigationWakeLock.addEventListener?.('release', () => { navigationWakeLock = null; });
+    const lock = await navigator.wakeLock.request('screen');
+    if (navigationWakeLockRequest !== request || getLiveLocationSession() !== live) {
+      await lock.release();
+      return;
+    }
+    navigationWakeLock = lock;
+    lock.addEventListener?.('release', () => { if (navigationWakeLock === lock) navigationWakeLock = null; });
   } catch (error) {
     // Navigation is intentionally usable when wake lock is unavailable.
+  } finally {
+    if (navigationWakeLockRequest === request) navigationWakeLockRequest = null;
   }
 }
 
 function releaseNavigationWakeLock() {
   const lock = navigationWakeLock;
   navigationWakeLock = null;
+  navigationWakeLockRequest = null;
   if (lock) lock.release().catch(() => {});
 }
 
@@ -758,7 +768,7 @@ function navigationMetricsMarkup() {
   if (!navigation) return '';
   if (!match) {
     const error = navigation.session.getState().error;
-    return `<p class="navigation-waiting" role="status">${escapeHtml(error ? (error.type === 'permission-denied' ? 'Location permission was denied.' : 'Waiting for a usable GPS position…') : 'Waiting for a usable GPS position…')}</p>`;
+    return `<p class="navigation-waiting" role="status">${escapeHtml(trackErrorMessage(error))}</p>`;
   }
   const routeTotal = formatNavigationDistance(match.stabilised.totalDistance);
   const completed = formatNavigationDistance(match.stabilised.distanceAlong);
@@ -813,6 +823,11 @@ function refreshTrackUI() {
   if (metrics) metrics.innerHTML = trackMetricsMarkup();
   const recenter = panelContent.querySelector('#track-recenter');
   if (recenter) recenter.hidden = trackRecording.follow;
+  const paused = trackRecording.session.getRecording()?.status === 'paused';
+  const pause = panelContent.querySelector('#track-pause');
+  if (pause) pause.textContent = paused ? 'Resume' : 'Pause';
+  const title = panelContent.querySelector('.route-title');
+  if (title) title.textContent = paused ? 'Recording paused' : (trackRecording.ready ? 'Recording' : 'Starting recording');
   renderLiveLocationOverlays(trackRecording);
   updateNavigationPeek();
 }
@@ -843,6 +858,7 @@ function startTrackRecording() {
     return;
   }
   clearRouteComparison();
+  stopNormalLocateControls();
   const session = FieldMapsLiveLocation.createSession();
   const receive = session.onLocation;
   session.onLocation = function(position) {
@@ -887,6 +903,7 @@ function finishTrackRecording() {
   releaseNavigationWakeLock();
   clearNavigationOverlays();
   panelView = 'track-summary';
+  updateNavigationPeek();
   showRoutePanelContent();
 }
 
@@ -926,10 +943,15 @@ function saveTrackedRoute() {
   const layer = L.geoJSON(geojson);
   const targetLayer = summary.mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
   const notesLayer = summary.mode === 'uk' ? window.routeNotesLayerUK : window.routeNotesLayerWorld;
+  try {
+    window.currentRouteIndex[summary.mode] = window.saveRouteToList(summary.mode, 'Recorded walk', layer, null, {
+      activity: activityFromRecording(summary.recording)
+    });
+  } catch (_) {
+    showRecordingSaveError();
+    return;
+  }
   targetLayer.clearLayers(); notesLayer.clearLayers();
-  window.currentRouteIndex[summary.mode] = window.saveRouteToList(summary.mode, 'Recorded walk', layer, null, {
-    activity: activityFromRecording(summary.recording)
-  });
   window.applyRouteStyle(layer, summary.mode, window.getRouteList(summary.mode)[window.currentRouteIndex[summary.mode]]);
   layer.eachLayer(item => targetLayer.addLayer(item));
   summary.session.cancelRecording();
@@ -950,7 +972,7 @@ function showTrackRecording() {
   panelContent.innerHTML = `<div class="panel-heading active-route-heading"><div class="panel-eyebrow"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> Track my route</div><h2 class="route-title">${recording.status === 'paused' ? 'Recording paused' : (trackRecording.ready ? 'Recording' : 'Starting recording')}</h2></div><div id="track-metrics">${trackMetricsMarkup()}</div>
     <div class="route-actions-row navigation-actions"><button id="track-recenter" class="panel-action" type="button"${trackRecording.follow ? ' hidden' : ''}>Recenter</button><button id="track-pause" class="panel-action" type="button">${recording.status === 'paused' ? 'Resume' : 'Pause'}</button><button id="track-finish" class="danger-solid" type="button">Finish</button></div>`;
   panelContent.querySelector('#track-recenter').onclick = () => { trackRecording.follow = true; followNavigationPosition(); refreshTrackUI(); };
-  panelContent.querySelector('#track-pause').onclick = () => recording.status === 'paused' ? resumeTrackRecording() : pauseTrackRecording();
+  panelContent.querySelector('#track-pause').onclick = () => trackRecording?.session.getRecording()?.status === 'paused' ? resumeTrackRecording() : pauseTrackRecording();
   panelContent.querySelector('#track-finish').onclick = finishTrackRecording;
 }
 
@@ -1080,6 +1102,11 @@ function startNavigation(context) {
     receive.call(session, position);
     handleNavigationPosition(position);
   };
+  const receiveError = session.onLocationError;
+  session.onLocationError = function(error) {
+    receiveError.call(session, error);
+    refreshNavigationUI();
+  };
   navigation = {
     mode: context.mode, index: context.index, plannedRoute: context.route,
     session, progressState: null, match: null, follow: true, timerId: null
@@ -1122,18 +1149,35 @@ function saveNavigationTrack(name) {
   const geojson = FieldMapsLiveLocation.recordingGeoJSON(points);
   if (!geojson) return false;
   const layer = L.geoJSON(geojson);
-  const index = window.saveRouteToList(summary.mode, name, layer, null, {
-    sourceRouteId: summary.plannedRoute.id,
-    activity: activityFromRecording(summary.recording)
-  });
+  let index;
+  try {
+    index = window.saveRouteToList(summary.mode, name, layer, null, {
+      sourceRouteId: summary.plannedRoute.id,
+      activity: activityFromRecording(summary.recording)
+    });
+  } catch (_) {
+    showRecordingSaveError();
+    return false;
+  }
   summary.recording = null;
-  summary.session.cancelRecording();
   navigationSummary = null;
   routePanelNotice = 'Walked track saved as a new route.';
   panelView = 'details';
   showRoutePanelContent();
   updateRouteFabLabel();
   return Number.isInteger(index);
+}
+
+function showRecordingSaveError() {
+  let notice = panelContent.querySelector('#recording-save-error');
+  if (!notice) {
+    notice = document.createElement('p');
+    notice.id = 'recording-save-error';
+    notice.className = 'route-workflow-error';
+    notice.setAttribute('role', 'alert');
+    panelContent.appendChild(notice);
+  }
+  notice.textContent = 'Could not save this walk. Browser storage may be full or unavailable. Keep this page open; the recording is still here so you can retry.';
 }
 
 function showNavigationMode() {
@@ -1267,6 +1311,16 @@ function decodeRoutePayload(encoded) {
   return JSON.parse(json);
 }
 
+function validateSharedRoute(route) {
+  if (!isPlainRouteObject(route)) return null;
+  if (route.routing) {
+    if (!isOrsRoutedRoute(route)) return null;
+    const geometry = lineCoordinatesToGeojson(route.routing.waypoints);
+    return validateBackupRoute({ ...route, geojson: geometry }) ? route : null;
+  }
+  return validateBackupRoute(route) ? route : null;
+}
+
 function getSharedRouteFromUrl() {
   const url = new URL(window.location.href);
   const routeParam = url.searchParams.get('route');
@@ -1277,12 +1331,12 @@ function getSharedRouteFromUrl() {
       if (payload.t === 'free') {
         const coordinates = decodePolyline(String(payload.g || ''));
         if (coordinates.length < 2) return null;
-        return { name: payload.n, color: payload.c, annotations: Array.isArray(payload.a) ? payload.a : [], geojson: lineCoordinatesToGeojson(coordinates) };
+        return validateSharedRoute({ name: payload.n, color: payload.c, annotations: Array.isArray(payload.a) ? payload.a : [], geojson: lineCoordinatesToGeojson(coordinates) });
       }
-      if (payload.t === 'ors' && payload.p === 'foot-hiking' && Array.isArray(payload.w) && payload.w.length >= 2 && payload.w.every(point => Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1]))) return { name: payload.n, color: payload.c, annotations: Array.isArray(payload.a) ? payload.a : [], routing: { provider: 'ors', profile: 'foot-hiking', waypoints: payload.w } };
+      if (payload.t === 'ors' && payload.p === 'foot-hiking' && Array.isArray(payload.w) && payload.w.length >= 2 && payload.w.every(point => Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1]))) return validateSharedRoute({ name: payload.n, color: payload.c, annotations: Array.isArray(payload.a) ? payload.a : [], routing: { provider: 'ors', profile: 'foot-hiking', waypoints: payload.w } });
       return null;
     }
-    return payload; // Legacy payloads stored full GeoJSON.
+    return validateSharedRoute(payload); // Legacy payloads stored full GeoJSON.
   } catch (e) {
     return null;
   }
@@ -1305,7 +1359,7 @@ function routeGeojsonToGpx(routeName, geojson) {
       });
     }
   });
-  const safeName = routeName.replace(/[<>]/g, '');
+  const safeName = String(routeName).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const gpxPoints = points
     .map(p => `    <trkpt lat="${p.lat}" lon="${p.lng}"></trkpt>`)
     .join('\n');
@@ -1335,7 +1389,7 @@ function downloadTextFile(filename, content, mimeType) {
 function getRouteLibraryItems() {
   return ['uk', 'world'].flatMap(mode => window.getRouteList(mode)
     .map((route, index) => ({ route, index }))
-    .filter(item => item.route && item.route.geojson)
+    .filter(item => item.route && hasValidRouteCoordinates(item.route.geojson))
     .map(item => ({
       mode,
       index: item.index,
@@ -1376,9 +1430,9 @@ function routeLibrarySearchText(item) {
   ].filter(Boolean).join(' ').toLocaleLowerCase();
 }
 
-function getVisibleRouteLibraryGroups() {
+function getVisibleRouteLibraryGroups(items = getRouteLibraryItems()) {
   const query = routeLibraryQuery.trim().toLocaleLowerCase();
-  const visibleItems = getRouteLibraryItems()
+  const visibleItems = items
     .filter(item => routeLibraryFilter === 'all' || item.mode === routeLibraryFilter)
   const itemsById = new Map(visibleItems.map(item => [item.route.id, item]));
   const childrenByParentId = new Map();
@@ -1653,13 +1707,13 @@ function scheduleRouteFitToVisibleMap(mode, includeDesktop = false) {
 window.isMobileRouteLayout = isMobileRouteLayout;
 window.getRouteFitOptions = getRouteFitOptions;
 
-function renderRouteLibraryResults() {
+function renderRouteLibraryResults(items = getRouteLibraryItems()) {
   const results = panelContent.querySelector('#route-library-results');
   const summary = panelContent.querySelector('#route-library-summary');
   if (!results || !summary) return;
 
-  const groups = getVisibleRouteLibraryGroups();
-  const total = getRouteLibraryItems().length;
+  const groups = getVisibleRouteLibraryGroups(items);
+  const total = items.length;
   const shownCount = groups.reduce((count, group) => count + 1 + (group.parentMatches ? group.children.length : group.matchingChildren.length), 0);
   summary.textContent = `${shownCount} ${shownCount === 1 ? 'route' : 'routes'} shown`;
   results.replaceChildren();
@@ -1924,7 +1978,7 @@ function showRouteBackup() {
       try {
         await window.FieldMapsPwa.refreshAppFiles();
       } catch (error) {
-        appStorageNotice.textContent = 'Could not refresh app files.';
+        appStorageNotice.textContent = 'Could not refresh app files. Existing offline files were kept; connect and try again.';
         refreshFiles.disabled = false;
       }
     };
@@ -2042,6 +2096,7 @@ function getDraftLayer(mode) {
 }
 
 function clearPathDraft() {
+  pathDraft?.controller?.abort();
   window.routeDraftLayerUK.clearLayers();
   window.routeDraftLayerWorld.clearLayers();
   pathDraft = null;
@@ -2140,6 +2195,7 @@ function finishRoutedEdit(cancelled) {
   if (!routedEdit) return;
   const edit = routedEdit;
   edit.requestId++;
+  edit.controller?.abort();
   if (cancelled) {
     const routes = window.getRouteList(edit.mode);
     if (routes[edit.index]) {
@@ -2163,12 +2219,13 @@ async function rerouteRoutedEdit(nextWaypoints) {
   if (!routedEdit || routedEdit.waiting || nextWaypoints.length < 2) return;
   const edit = routedEdit;
   const requestId = ++edit.requestId;
+  edit.controller = new AbortController();
   edit.waiting = true;
   edit.error = '';
   edit.adding = false;
   showRoutePanelContent();
   try {
-    const geojson = await requestOrsFootHikingRoute(nextWaypoints);
+    const geojson = await requestOrsFootHikingRoute(nextWaypoints, edit.controller);
     if (!routedEdit || routedEdit !== edit || requestId !== edit.requestId) return;
     const routing = { provider: 'ors', profile: 'foot-hiking', waypoints: cloneRouteData(nextWaypoints) };
     if (!window.replaceRouteGeometryInList(edit.mode, edit.index, geojson, routing)) throw new Error('Route unavailable');
@@ -2234,38 +2291,45 @@ async function requestPathRoute() {
     showRoutePanelContent();
     return;
   }
-  const requestId = ++pathDraft.requestId;
+  const draft = pathDraft;
+  const requestId = ++draft.requestId;
+  draft.controller?.abort();
+  draft.controller = new AbortController();
   pathDraft.waiting = true;
   pathDraft.error = '';
   showRoutePanelContent();
   try {
-    const geojson = await requestOrsFootHikingRoute(pathDraft.waypoints);
-    if (!pathDraft || requestId !== pathDraft.requestId) return;
+    const geojson = await requestOrsFootHikingRoute(draft.waypoints, draft.controller);
+    if (pathDraft !== draft || requestId !== draft.requestId) return;
     pathDraft.geojson = geojson;
     pathDraft.error = '';
     renderPathDraft();
   } catch (error) {
-    if (!pathDraft || requestId !== pathDraft.requestId) return;
+    if (pathDraft !== draft || requestId !== draft.requestId) return;
     pathDraft.error = pathDraft.kind === 'snap' ? 'Could not convert this route to walking paths. Your original route is unchanged; try again later.' : 'Could not follow paths. Your waypoints are still available; try again or add another point.';
   } finally {
-    if (pathDraft && requestId === pathDraft.requestId) {
+    if (pathDraft === draft && requestId === draft.requestId) {
       pathDraft.waiting = false;
       showRoutePanelContent();
     }
   }
 }
 
-async function requestOrsFootHikingRoute(waypoints) {
+async function requestOrsFootHikingRoute(waypoints, controller = new AbortController()) {
   if (!CONFIG.orsApiKey) throw new Error('Path routing is unavailable because the ORS key is missing.');
-  const response = await fetch('https://api.heigit.org/openrouteservice/v2/directions/foot-hiking/geojson', {
-    method: 'POST',
-    headers: { Authorization: CONFIG.orsApiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ coordinates: waypoints })
-  });
-  if (!response.ok) throw new Error('Routing request failed');
-  const geojson = await response.json();
-  if (!geojson || !geojson.features || !geojson.features.length) throw new Error('No route returned');
-  return geojson;
+  const timeout = window.setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch('https://api.heigit.org/openrouteservice/v2/directions/foot-hiking/geojson', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { Authorization: CONFIG.orsApiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coordinates: waypoints })
+    });
+    if (!response.ok) throw new Error('Routing request failed');
+    const geojson = await response.json();
+    if (!hasValidRouteCoordinates(geojson)) throw new Error('No valid route returned');
+    return geojson;
+  } finally { window.clearTimeout(timeout); }
 }
 
 function startSnapRoute(context) {
@@ -2343,7 +2407,7 @@ function undoPathWaypoint() {
   if (!pathDraft || pathDraft.waiting || !pathDraft.waypoints.length) return;
   pathDraft.waypoints.pop();
   pathDraft.error = '';
-  if (pathDraft.waypoints.length < 2) pathDraft.geojson = null;
+  pathDraft.geojson = null;
   renderPathDraft();
   if (pathDraft.waypoints.length >= 2) requestPathRoute();
   else showRoutePanelContent();
@@ -2554,7 +2618,7 @@ function showRouteLibrary() {
     };
   });
   panelContent.querySelector('#add-route-panel').onclick = openRouteCreationOptions;
-  renderRouteLibraryResults();
+  renderRouteLibraryResults(items);
 }
 
 function openRouteCreationOptions() {
@@ -2921,15 +2985,19 @@ function showActiveRouteDetails(context) {
       await window.fetchRouteElevation(context.mode, context.index);
       elevationUpdated = true;
     } catch (error) {
-      routePanelNotice = 'Could not get elevation. Your route is unchanged; please try again.';
+      const active = getActiveRouteContext();
+      if (active?.route.id === context.route.id) routePanelNotice = 'Could not get elevation. Your route is unchanged; please try again.';
     } finally {
       if (elevationRequesting === requestKey) elevationRequesting = null;
-      if (elevationUpdated && routeDisplayMode[context.mode] !== 'solid') {
+      const active = getActiveRouteContext();
+      if (elevationUpdated && active?.route.id === context.route.id && routeDisplayMode[context.mode] !== 'solid') {
         const route = window.getRouteList(context.mode)[context.index];
         if (routeDisplayMode[context.mode] === 'steepness') showSteepnessDisplay(context.mode, route);
         else showElevationDisplay(context.mode, route);
       }
-      showRoutePanelContent();
+      if (active?.route.id === context.route.id && panelView === 'details' &&
+          !renamingRoute && !drawingMode && !editingMode && !noteDraft && !notePlacementMode &&
+          !snapPreview && !getLiveLocationSession() && panel.classList.contains('open')) showRoutePanelContent();
     }
   };
   panelContent.querySelectorAll('[data-open-note]').forEach(button => {
@@ -3209,6 +3277,8 @@ function setRoutePanelOpen(isOpen, restoreFocus = false) {
     addDrawToolbar();
     window.requestAnimationFrame(() => panelClose.focus({ preventScroll: true }));
   } else {
+    if (drawingMode) clearPathDraft();
+    if (editingMode && !routedEdit) activeDrawControl?._toolbars?.edit?._modes.edit.handler.revertLayers();
     resetRouteNameKeyboardLayout();
     clearRouteProfileMarker();
     if (!mobilePeek) panelContent.innerHTML = '';
@@ -3458,9 +3528,11 @@ function saveMapState() {
   else map = mapWorld;
   const center = map.getCenter();
   const zoom = map.getZoom();
-  localStorage.setItem('lastMode', mode);
-  localStorage.setItem('lastCenter', JSON.stringify([center.lat, center.lng]));
-  localStorage.setItem('lastZoom', zoom);
+  try {
+    localStorage.setItem('lastMode', mode);
+    localStorage.setItem('lastCenter', JSON.stringify([center.lat, center.lng]));
+    localStorage.setItem('lastZoom', zoom);
+  } catch (_) { /* A failed preference write must not interrupt map movement. */ }
 }
 mapUK.on('moveend zoomend', saveMapState);
 mapWorld.on('moveend zoomend', saveMapState);
@@ -3620,7 +3692,9 @@ function showSearchResultMarker(mode, result) {
     })
   });
   layer.addLayer(marker);
-  marker.bindTooltip(result.label, {
+  const label = document.createElement('span');
+  label.textContent = result.label;
+  marker.bindTooltip(label, {
     permanent: true,
     direction: 'top',
     offset: [0, -22],

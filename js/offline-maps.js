@@ -9,6 +9,19 @@
   const STYLES = { Road_27700: 'Road', Outdoor_27700: 'Outdoor', Leisure_27700: 'Leisure' };
   let active = null;
   let activeProgress = null;
+  let connectivityTarget = null;
+
+  function updateConnectivity() {
+    if (!connectivityTarget?.isConnected) { connectivityTarget = null; return; }
+    connectivityTarget.textContent = navigator.onLine === false
+      ? "You're offline. Downloaded maps remain available."
+      : 'Offline maps ready for use without a connection.';
+  }
+  // One pair for the page lifetime; reopening Settings must not retain old panels.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online', updateConnectivity);
+    window.addEventListener('offline', updateConnectivity);
+  }
 
   function canonicalizeOsTileUrl(value) {
     let url;
@@ -253,12 +266,8 @@ function packLabel(pack) {
       '<section class="route-backup-section"><h3>Downloaded maps</h3><div id="offline-pack-list"></div><p id="offline-notice" class="route-backup-notice" role="status"></p></section>';
     container.querySelector('#back-to-settings-from-offline').onclick = context.back;
     const notice = container.querySelector('#offline-notice');
-    const connectivity = container.querySelector('#offline-connectivity');
-    const updateConnectivity = () => { if (connectivity.isConnected) connectivity.textContent = navigator.onLine === false
-      ? "You're offline. Downloaded maps remain available." : 'Offline maps ready for use without a connection.'; };
+    connectivityTarget = container.querySelector('#offline-connectivity');
     updateConnectivity();
-    window.addEventListener('online', updateConnectivity, { once: true });
-    window.addEventListener('offline', updateConnectivity, { once: true });
     const refreshStorage = async () => {
       const target = container.querySelector('#offline-storage');
       if (!target) return;
@@ -324,7 +333,7 @@ function packLabel(pack) {
     container.innerHTML = '<div class="panel-navigation"><button id="offline-area-back" class="panel-back" type="button">‹ Offline maps</button></div>' +
       '<div class="panel-heading workflow-heading"><div class="panel-eyebrow">Offline maps</div><h2 class="route-title">Download current area</h2></div>' +
       '<section class="route-backup-section offline-route-preview"><dl>' +
-      '<div><dt>Map</dt><dd><select id="offline-style"><option value="Road_27700">Road</option><option value="Outdoor_27700">Outdoor</option><option value="Leisure_27700">Leisure</option></select></dd></div>' +
+      '<div><dt>Map</dt><dd><select id="offline-style" aria-label="Offline map style"><option value="Road_27700">Road</option><option value="Outdoor_27700">Outdoor</option><option value="Leisure_27700">Leisure</option></select></dd></div>' +
       '<div><dt>Detail</dt><dd><label><input type="radio" name="offline-detail" value="standard" checked> Standard</label> <label><input type="radio" name="offline-detail" value="detailed"> Detailed</label></dd></div>' +
       '<div><dt>Area</dt><dd>Current visible map</dd></div></dl>' +
       '<p id="offline-tile-count" class="panel-hint"></p><p id="offline-area-notice" class="route-backup-notice" role="status"></p>' +
@@ -410,7 +419,7 @@ function packLabel(pack) {
       '<div class="panel-heading workflow-heading"><div class="panel-eyebrow">Saved route</div><h2 class="route-title">Offline map</h2></div>' +
       '<section class="route-backup-section offline-route-preview"><dl>' +
       '<div><dt>Route</dt><dd id="offline-route-name"></dd></div>' +
-      '<div><dt>Map</dt><dd><select id="offline-style"><option value="Road_27700">Road</option><option value="Outdoor_27700">Outdoor</option><option value="Leisure_27700">Leisure</option></select></dd></div>' +
+      '<div><dt>Map</dt><dd><select id="offline-style" aria-label="Offline map style"><option value="Road_27700">Road</option><option value="Outdoor_27700">Outdoor</option><option value="Leisure_27700">Leisure</option></select></dd></div>' +
       '<div><dt>Detail</dt><dd><label><input type="radio" name="offline-detail" value="standard" checked> Standard</label> <label><input type="radio" name="offline-detail" value="detailed"> Detailed</label></dd></div>' +
       '<div><dt>Coverage</dt><dd>Route + 1 km</dd></div></dl>' +
       '<p id="offline-tile-count" class="panel-hint"></p><p id="offline-route-notice" class="route-backup-notice" role="status"></p>' +
