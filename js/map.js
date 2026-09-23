@@ -165,6 +165,8 @@ let drawingMode = false;
 let editingMode = false;
 let routeCreationMode = 'free';
 let pathDraft = null;
+let unsavedRouteDraft = null;
+let unsavedEditDraft = null;
 let snapPreview = null;
 // Routed editing is deliberately separate from the detailed line geometry. The
 // saved route remains the last valid route until a full reroute succeeds.
@@ -190,7 +192,7 @@ let selectedAnnotationId = null;
 let navigation = null;
 let navigationSummary = null;
 let trackRecording = null;
-window.FieldMapsHasLiveSession = () => Boolean(navigation || trackRecording || navigationSummary || trackSummary || drawingMode || editingMode);
+window.FieldMapsHasLiveSession = () => Boolean(navigation || trackRecording || navigationSummary || trackSummary || drawingMode || editingMode || unsavedRouteDraft || unsavedEditDraft || noteDraft || sharedRouteImport);
 let trackSummary = null;
 let confirmingTrackDiscard = false;
 let navigationWakeLock = null;
@@ -943,14 +945,17 @@ function saveTrackedRoute() {
   const layer = L.geoJSON(geojson);
   const targetLayer = summary.mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
   const notesLayer = summary.mode === 'uk' ? window.routeNotesLayerUK : window.routeNotesLayerWorld;
+  let index;
   try {
-    window.currentRouteIndex[summary.mode] = window.saveRouteToList(summary.mode, 'Recorded walk', layer, null, {
+    index = window.saveRouteToList(summary.mode, 'Recorded walk', layer, null, {
       activity: activityFromRecording(summary.recording)
     });
   } catch (_) {
     showRecordingSaveError();
     return;
   }
+  if (!Number.isInteger(index)) { showRecordingSaveError(); return; }
+  window.currentRouteIndex[summary.mode] = index;
   targetLayer.clearLayers(); notesLayer.clearLayers();
   window.applyRouteStyle(layer, summary.mode, window.getRouteList(summary.mode)[window.currentRouteIndex[summary.mode]]);
   layer.eachLayer(item => targetLayer.addLayer(item));
@@ -1159,6 +1164,7 @@ function saveNavigationTrack(name) {
     showRecordingSaveError();
     return false;
   }
+  if (!Number.isInteger(index)) { showRecordingSaveError(); return false; }
   summary.recording = null;
   navigationSummary = null;
   routePanelNotice = 'Walked track saved as a new route.';
@@ -1177,7 +1183,107 @@ function showRecordingSaveError() {
     notice.setAttribute('role', 'alert');
     panelContent.appendChild(notice);
   }
-  notice.textContent = 'Could not save this walk. Browser storage may be full or unavailable. Keep this page open; the recording is still here so you can retry.';
+  notice.textContent = routeStorageMessage(trackSummary?.mode || navigationSummary?.mode, 'Could not save this walk') + ' The recording is still here; you can retry.';
+}
+
+function routeStorageMessage(mode, action = 'Could not save changes') {
+  const failure = window.getRouteStorageError(mode) || window.readRouteStorage(mode);
+  const reason = failure?.code === 'malformed' ? 'Saved route data could not be read. Open Settings → Route backup & storage to recover it.'
+    : failure?.code === 'quota' ? 'Browser storage is full.' : 'Browser storage is not available.';
+  return `${action}. ${reason} Your unsaved changes are still available.`;
+}
+
+function showInlineStorageError(mode, action) {
+  let notice = panelContent.querySelector('#route-storage-error');
+  if (!notice) {
+    notice = document.createElement('p');
+    notice.id = 'route-storage-error';
+    notice.className = 'route-workflow-error';
+    notice.setAttribute('role', 'alert');
+    panelContent.appendChild(notice);
+  }
+  notice.textContent = routeStorageMessage(mode, action);
+}
+
+function keepUnsavedRoute(mode, layer, routing, name) {
+  unsavedRouteDraft = { mode, layer, routing, name, error: routeStorageMessage(mode, 'Could not save route') };
+  drawingMode = false;
+  editingMode = false;
+  panelView = 'unsaved-route';
+  const draftLayer = getDraftLayer(mode);
+  draftLayer.clearLayers();
+  if (typeof layer.eachLayer === 'function') layer.eachLayer(item => draftLayer.addLayer(item));
+  else draftLayer.addLayer(layer);
+  showRoutePanelContent();
+}
+
+function showUnsavedRoute() {
+  const draft = unsavedRouteDraft;
+  panel.classList.remove('library-view', 'library-scroll-view');
+  panelContent.className = 'route-detail-content';
+  panelContent.innerHTML = `<div class="panel-heading workflow-heading"><div class="panel-eyebrow">Unsaved ${getModeLabel(draft.mode)} route</div><h2 class="route-title">Save your route</h2><p class="panel-hint">Your drawn route is still on the map.</p></div>
+    <form id="unsaved-route-form"><label for="unsaved-route-name">Route name</label><input id="unsaved-route-name" maxlength="100" required value="${escapeAttribute(draft.name)}"><p class="route-workflow-error" role="alert">${escapeHtml(draft.error)}</p><div class="route-actions-row"><button class="primary-action" type="submit">Retry save</button><button id="discard-unsaved-route" class="panel-action" type="button">Discard draft</button></div></form>`;
+  panelContent.querySelector('#unsaved-route-form').onsubmit = event => {
+    event.preventDefault();
+    draft.name = panelContent.querySelector('#unsaved-route-name').value.trim();
+    if (!draft.name) return;
+    const index = window.saveRouteToList(draft.mode, draft.name, draft.layer, draft.routing);
+    if (!Number.isInteger(index)) {
+      draft.error = routeStorageMessage(draft.mode, 'Could not save route');
+      panelContent.querySelector('.route-workflow-error').textContent = draft.error;
+      return;
+    }
+    const target = draft.mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
+    const notes = draft.mode === 'uk' ? window.routeNotesLayerUK : window.routeNotesLayerWorld;
+    target.clearLayers(); notes.clearLayers();
+    window.applyRouteStyle(draft.layer, draft.mode, window.getRouteList(draft.mode)[index]);
+    if (typeof draft.layer.eachLayer === 'function') draft.layer.eachLayer(item => target.addLayer(item));
+    else target.addLayer(draft.layer);
+    getDraftLayer(draft.mode).clearLayers();
+    if (pathDraft?.mode === draft.mode && !pathDraft.kind) clearPathDraft();
+    window.currentRouteIndex[draft.mode] = index;
+    unsavedRouteDraft = null;
+    panelView = 'details';
+    routePanelNotice = 'Route saved.';
+    window.updateRouteListUI(draft.mode);
+    showRoutePanelContent();
+    updateRouteFabLabel();
+  };
+  panelContent.querySelector('#discard-unsaved-route').onclick = () => {
+    if (!window.confirm('Discard this unsaved route?')) return;
+    getDraftLayer(draft.mode).clearLayers();
+    if (pathDraft?.mode === draft.mode && !pathDraft.kind) clearPathDraft();
+    unsavedRouteDraft = null;
+    panelView = 'library';
+    showRoutePanelContent();
+  };
+}
+
+function showUnsavedEdit() {
+  const draft = unsavedEditDraft;
+  panel.classList.remove('library-view', 'library-scroll-view');
+  panelContent.className = 'route-detail-content';
+  panelContent.innerHTML = `<div class="panel-heading workflow-heading"><div class="panel-eyebrow">Unsaved changes</div><h2 class="route-title">Route edit</h2><p class="panel-hint">The edited line is on the map. The saved version is still in browser storage.</p></div><p class="route-workflow-error" role="alert">${escapeHtml(draft.error)}</p><div class="route-actions-row"><button id="retry-route-edit" class="primary-action" type="button">Retry save</button><button id="discard-route-edit" class="panel-action" type="button">Discard edit</button></div>`;
+  panelContent.querySelector('#retry-route-edit').onclick = () => {
+    const current = window.getRouteList(draft.mode)[draft.index];
+    if (!current || current.id !== draft.id || !window.updateRouteInList(draft.mode, draft.index, draft.geojson)) {
+      draft.error = routeStorageMessage(draft.mode);
+      panelContent.querySelector('.route-workflow-error').textContent = draft.error;
+      return;
+    }
+    unsavedEditDraft = null;
+    panelView = 'details';
+    routePanelNotice = 'Route changes saved.';
+    showRoutePanelContent();
+  };
+  panelContent.querySelector('#discard-route-edit').onclick = () => {
+    if (!window.confirm('Discard the unsaved route edit?')) return;
+    const saved = window.getRouteList(draft.mode)[draft.index];
+    if (saved?.id === draft.id) renderActiveRouteGeometry(draft.mode, saved);
+    unsavedEditDraft = null;
+    panelView = 'details';
+    showRoutePanelContent();
+  };
 }
 
 function showNavigationMode() {
@@ -1721,7 +1827,9 @@ function renderRouteLibraryResults(items = getRouteLibraryItems()) {
   if (!groups.length) {
     const empty = document.createElement('div');
     empty.className = 'panel-empty route-library-empty';
-    if (!total) {
+    if (!total && ['uk', 'world'].some(mode => !window.readRouteStorage(mode).ok)) {
+      empty.innerHTML = `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><div><strong>Some saved routes could not be read</strong><span>Check the affected map data above.</span></div>`;
+    } else if (!total) {
       empty.innerHTML = `<i class="fa-solid fa-map-location-dot" aria-hidden="true"></i>
         <div><strong>No saved routes yet</strong><span>Draw your first walk and it will be stored on this device.</span></div>`;
     } else {
@@ -1835,6 +1943,13 @@ function getRouteBackupFilename() {
 
 function exportRouteBackupFile() {
   const backup = window.exportRouteBackup();
+  if (backup.ok === false) {
+    routeBackupNotice = backup.code === 'malformed'
+      ? 'Saved route data could not be read. Download a recovery copy for the damaged map before resetting it.'
+      : 'Browser storage is not available. The route backup could not be exported.';
+    showRouteBackup();
+    return;
+  }
   downloadTextFile(getRouteBackupFilename(), JSON.stringify(backup, null, 2), 'application/json;charset=utf-8');
   routeBackupNotice = `Exported ${backup.routes.uk.length} UK / ${backup.routes.world.length} Worldwide routes.`;
   showRouteBackup();
@@ -1898,6 +2013,11 @@ function showRouteBackup() {
   panel.setAttribute('aria-label', 'Data and storage');
   panelContent.className = 'route-detail-content route-backup-content';
   const preview = routeBackupCandidate ? `${routeBackupCandidate.routes.uk.length} UK routes / ${routeBackupCandidate.routes.world.length} Worldwide routes` : '';
+  const damaged = ['uk', 'world'].map(mode => ({ mode, result: window.readRouteStorage(mode) })).filter(item => !item.result.ok);
+  const recovery = damaged.map(({ mode, result }) => {
+    const label = getModeLabel(mode);
+    return `<section class="route-backup-section" aria-label="${label} route recovery"><h3>${label} route data</h3><p>${result.code === 'malformed' ? `Saved ${label} route data couldn't be read. The stored data has not been changed. Download a recovery copy, restore a backup, or explicitly reset this map's damaged data.` : `Field Maps can't access ${label} route data right now. Your saved data has not been reset.`}</p>${result.code === 'malformed' ? `<div class="route-actions-row route-backup-actions"><button type="button" class="secondary-action" data-download-recovery="${mode}">Download recovery copy</button><button type="button" class="panel-action danger-action" data-reset-damaged="${mode}">Reset damaged ${label} route data</button></div>` : ''}</section>`;
+  }).join('');
   panelContent.innerHTML = `
     <div class="panel-navigation">
       <button id="back-to-settings-from-backup" class="panel-back" type="button"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Settings</button>
@@ -1907,6 +2027,7 @@ function showRouteBackup() {
       <h2 class="route-title">Data &amp; storage</h2>
       <p class="panel-hint">Export only saved routes, or restore routes from a Field Maps backup file.</p>
     </div>
+    ${recovery}
     <section class="route-backup-section" aria-labelledby="export-route-backup-title">
       <h3 id="export-route-backup-title">Export route backup</h3>
       <p>Download all UK and Worldwide saved routes as a portable JSON file.</p>
@@ -1939,6 +2060,26 @@ function showRouteBackup() {
     showRoutePanelContent();
   };
   panelContent.querySelector('#export-route-backup').onclick = exportRouteBackupFile;
+  panelContent.querySelectorAll('[data-download-recovery]').forEach(button => {
+    button.onclick = () => {
+      const mode = button.dataset.downloadRecovery;
+      const result = window.readRouteStorage(mode);
+      if (result.code !== 'malformed') { routeBackupNotice = 'The recovery copy is no longer available.'; showRouteBackup(); return; }
+      downloadTextFile(`field-maps-route-recovery-${mode}-${new Date().toISOString().slice(0, 10)}.txt`, result.raw, 'text/plain;charset=utf-8');
+      routeBackupNotice = `Downloaded the unchanged ${getModeLabel(mode)} recovery copy.`;
+      showRouteBackup();
+    };
+  });
+  panelContent.querySelectorAll('[data-reset-damaged]').forEach(button => {
+    button.onclick = () => {
+      const mode = button.dataset.resetDamaged;
+      const label = getModeLabel(mode);
+      if (!window.confirm(`Reset damaged ${label} route data?\n\nThis removes the unreadable ${label} route data from this browser. Download a recovery copy first if you may need it later.`)) return;
+      const result = window.resetDamagedRouteStorage(mode);
+      routeBackupNotice = result.ok ? `Damaged ${label} route data reset. Other saved data was not changed.` : routeStorageMessage(mode, `Could not reset ${label} route data`);
+      showRouteBackup();
+    };
+  });
   const fileInput = panelContent.querySelector('#route-backup-file');
   panelContent.querySelector('#choose-route-backup').onclick = () => fileInput.click();
   fileInput.onchange = function() {
@@ -2142,9 +2283,10 @@ function renderRoutedEditMarkers() {
   if (!routedEdit) return;
   const layer = getDraftLayer(routedEdit.mode);
   layer.clearLayers();
-  routedEdit.waypoints.forEach(function(waypoint, index) {
+  if (routedEdit.unsaved) L.geoJSON(routedEdit.unsaved.geojson).eachLayer(item => layer.addLayer(item));
+  (routedEdit.unsaved?.waypoints || routedEdit.waypoints).forEach(function(waypoint, index) {
     const marker = L.marker([waypoint[1], waypoint[0]], {
-      draggable: !routedEdit.waiting,
+      draggable: !routedEdit.waiting && !routedEdit.unsaved,
       icon: L.divIcon({
         className: `route-waypoint-marker${routedEdit.selectedIndex === index ? ' is-selected' : ''}`,
         html: `<span>${index + 1}</span>`, iconSize: [32, 32], iconAnchor: [16, 16]
@@ -2182,7 +2324,7 @@ function startRoutedEdit(context) {
     original: cloneRouteData(context.route),
     originalDisplayMode: routeDisplayMode[context.mode],
     waypoints: cloneRouteData(context.route.routing.waypoints),
-    requestId: 0, waiting: false, error: '', selectedIndex: null, adding: false
+    requestId: 0, waiting: false, error: '', selectedIndex: null, adding: false, changed: false
   };
   clearSteepnessDisplay(context.mode);
   editingMode = true;
@@ -2196,11 +2338,24 @@ function finishRoutedEdit(cancelled) {
   const edit = routedEdit;
   edit.requestId++;
   edit.controller?.abort();
+  if (!cancelled && edit.unsaved) {
+    if (!window.replaceRouteGeometryInList(edit.mode, edit.index, edit.unsaved.geojson, edit.unsaved.routing)) {
+      edit.error = routeStorageMessage(edit.mode);
+      showRoutePanelContent();
+      return;
+    }
+    edit.waypoints = edit.unsaved.waypoints;
+    edit.unsaved = null;
+    renderActiveRouteGeometry(edit.mode, window.getRouteList(edit.mode)[edit.index]);
+  }
+  if (cancelled && edit.changed && !window.restoreRouteRecordInList(edit.mode, edit.index, edit.original)) {
+    edit.error = routeStorageMessage(edit.mode, 'Could not discard changes');
+    showRoutePanelContent();
+    return;
+  }
   if (cancelled) {
     const routes = window.getRouteList(edit.mode);
     if (routes[edit.index]) {
-      routes[edit.index] = cloneRouteData(edit.original);
-      localStorage.setItem(`routeList_${edit.mode}`, JSON.stringify(routes));
       renderActiveRouteGeometry(edit.mode, routes[edit.index]);
       if (edit.originalDisplayMode === 'steepness') showSteepnessDisplay(edit.mode, routes[edit.index]);
       if (edit.originalDisplayMode === 'elevation') showElevationDisplay(edit.mode, routes[edit.index]);
@@ -2216,7 +2371,7 @@ function finishRoutedEdit(cancelled) {
 }
 
 async function rerouteRoutedEdit(nextWaypoints) {
-  if (!routedEdit || routedEdit.waiting || nextWaypoints.length < 2) return;
+  if (!routedEdit || routedEdit.waiting || routedEdit.unsaved || nextWaypoints.length < 2) return;
   const edit = routedEdit;
   const requestId = ++edit.requestId;
   edit.controller = new AbortController();
@@ -2228,7 +2383,16 @@ async function rerouteRoutedEdit(nextWaypoints) {
     const geojson = await requestOrsFootHikingRoute(nextWaypoints, edit.controller);
     if (!routedEdit || routedEdit !== edit || requestId !== edit.requestId) return;
     const routing = { provider: 'ors', profile: 'foot-hiking', waypoints: cloneRouteData(nextWaypoints) };
-    if (!window.replaceRouteGeometryInList(edit.mode, edit.index, geojson, routing)) throw new Error('Route unavailable');
+    if (!window.replaceRouteGeometryInList(edit.mode, edit.index, geojson, routing)) {
+      edit.unsaved = { geojson, routing, waypoints: cloneRouteData(nextWaypoints) };
+      edit.error = routeStorageMessage(edit.mode);
+      const preview = getDraftLayer(edit.mode);
+      preview.clearLayers();
+      L.geoJSON(geojson).eachLayer(item => preview.addLayer(item));
+      return;
+    }
+    edit.unsaved = null;
+    edit.changed = true;
     edit.waypoints = cloneRouteData(nextWaypoints);
     edit.selectedIndex = null;
     renderActiveRouteGeometry(edit.mode, window.getRouteList(edit.mode)[edit.index]);
@@ -2357,7 +2521,11 @@ function applySnapRoute() {
   const context = getActiveRouteContext();
   if (!context || context.mode !== snapPreview.mode || context.index !== snapPreview.index) return cancelSnapRoute();
   const routing = { provider: 'ors', profile: 'foot-hiking', waypoints: pathDraft.waypoints.slice() };
-  if (!window.replaceRouteGeometryInList(context.mode, context.index, pathDraft.geojson, routing)) return;
+  if (!window.replaceRouteGeometryInList(context.mode, context.index, pathDraft.geojson, routing)) {
+    pathDraft.error = routeStorageMessage(context.mode);
+    showRoutePanelContent();
+    return;
+  }
   const route = window.getRouteList(context.mode)[context.index];
   clearSteepnessDisplay(context.mode);
   const routeLayer = context.mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
@@ -2480,6 +2648,7 @@ function showNoteForm(context) {
         <button class="primary-action" type="submit">Save note</button>
         <button id="cancel-note-form-action" class="panel-action" type="button">Cancel</button>
       </div>
+      <p class="route-workflow-error" id="note-save-error" role="alert" hidden></p>
     </form>`;
 
   const cancel = function() {
@@ -2501,7 +2670,13 @@ function showNoteForm(context) {
       title,
       note
     };
-    if (!window.saveRouteAnnotation(context.mode, context.index, annotation)) return;
+    if (!window.saveRouteAnnotation(context.mode, context.index, annotation)) {
+      noteDraft = annotation;
+      const error = panelContent.querySelector('#note-save-error');
+      error.textContent = routeStorageMessage(context.mode, 'Could not save note');
+      error.hidden = false;
+      return;
+    }
     selectedAnnotationId = annotation.id;
     noteDraft = null;
     const updatedRoute = window.getRouteList(context.mode)[context.index];
@@ -2541,7 +2716,10 @@ function showNoteDetails(context, annotation) {
     showRoutePanelContent();
   };
   panelContent.querySelector('#delete-note-panel').onclick = function() {
-    if (!window.deleteRouteAnnotation(context.mode, context.index, annotation.id)) return;
+    if (!window.deleteRouteAnnotation(context.mode, context.index, annotation.id)) {
+      showInlineStorageError(context.mode, 'Could not delete note');
+      return;
+    }
     selectedAnnotationId = null;
     const updatedRoute = window.getRouteList(context.mode)[context.index];
     renderRouteAnnotations(context.mode, updatedRoute);
@@ -2552,6 +2730,7 @@ function showNoteDetails(context, annotation) {
 
 function showRouteLibrary() {
   const items = getRouteLibraryItems();
+  const damaged = ['uk', 'world'].map(mode => ({ mode, result: window.readRouteStorage(mode) })).filter(item => !item.result.ok);
   const counts = {
     all: items.length,
     uk: items.filter(item => item.mode === 'uk').length,
@@ -2570,6 +2749,7 @@ function showRouteLibrary() {
       </div>
       <p class="panel-hint">Stored locally on this device. Choose a route to put it on the map.</p>
     </div>
+    ${damaged.map(({ mode, result }) => `<div class="route-workflow-error" role="alert">${result.code === 'malformed' ? `Saved ${getModeLabel(mode)} route data couldn't be read. The stored data has not been changed.` : `${getModeLabel(mode)} route data is unavailable because browser storage can't be accessed.`} <button type="button" class="text-action" data-open-route-recovery="${mode}">Open recovery options</button></div>`).join('')}
     ${counts.all ? `<div class="route-library-tools">
       <label class="route-search-field">
         <span class="sr-only">Search saved routes</span>
@@ -2618,6 +2798,9 @@ function showRouteLibrary() {
     };
   });
   panelContent.querySelector('#add-route-panel').onclick = openRouteCreationOptions;
+  panelContent.querySelectorAll('[data-open-route-recovery]').forEach(button => {
+    button.onclick = () => { panelView = 'backup'; showRoutePanelContent(); };
+  });
   renderRouteLibraryResults(items);
 }
 
@@ -2666,12 +2849,12 @@ function showRouteWorkflow() {
     ${isRoutedEdit && routedEdit.error ? `<p class="route-workflow-error" role="alert">${escapeHtml(routedEdit.error)}</p>` : ''}
     ${drawingMode && routeCreationMode === 'paths' && pathDraft?.waypoints.length ? '<button id="undo-path-waypoint" class="panel-action route-workflow-action" type="button">Undo last point</button>' : ''}
     ${isRoutedEdit ? `<div class="route-actions-row route-routed-edit-actions">
-      <button id="add-routed-waypoint" class="panel-action" type="button" ${routedEdit.waiting ? 'disabled' : ''}>Add waypoint</button>
-      <button id="delete-routed-waypoint" class="panel-action" type="button" ${routedEdit.selectedIndex == null || routedEdit.waiting || routedEdit.waypoints.length <= 2 ? 'disabled' : ''}>Remove selected</button>
+      <button id="add-routed-waypoint" class="panel-action" type="button" ${routedEdit.waiting || routedEdit.unsaved ? 'disabled' : ''}>Add waypoint</button>
+      <button id="delete-routed-waypoint" class="panel-action" type="button" ${routedEdit.selectedIndex == null || routedEdit.waiting || routedEdit.unsaved || routedEdit.waypoints.length <= 2 ? 'disabled' : ''}>Remove selected</button>
     </div>` : ''}
     <div class="route-actions-row">
       <button id="${drawingMode ? 'save-route-panel' : 'save-edit-route-panel'}" class="primary-action primary-action-wide" type="button">
-        <i class="fa-solid fa-check" aria-hidden="true"></i><span>${drawingMode ? 'Finish route' : 'Done'}</span>
+        <i class="fa-solid fa-check" aria-hidden="true"></i><span>${drawingMode ? 'Finish route' : routedEdit?.unsaved ? 'Retry save' : 'Done'}</span>
       </button>
       <button id="cancel-route-workflow" class="panel-action" type="button">Cancel</button>
     </div>`;
@@ -2712,11 +2895,14 @@ function showRouteWorkflow() {
       const defaultName = getDefaultRouteName(mode);
       const targetLayer = mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
       const notesLayer = mode === 'uk' ? window.routeNotesLayerUK : window.routeNotesLayerWorld;
+      const routing = {
+        provider: 'ors', profile: 'foot-hiking', waypoints: pathDraft.waypoints.slice()
+      };
+      const index = window.saveRouteToList(mode, defaultName, routeLayer, routing);
+      if (!Number.isInteger(index)) { keepUnsavedRoute(mode, routeLayer, routing, defaultName); return; }
       targetLayer.clearLayers();
       notesLayer.clearLayers();
-      window.currentRouteIndex[mode] = window.saveRouteToList(mode, defaultName, routeLayer, {
-        provider: 'ors', profile: 'foot-hiking', waypoints: pathDraft.waypoints.slice()
-      });
+      window.currentRouteIndex[mode] = index;
       window.applyRouteStyle(routeLayer, mode, window.getRouteList(mode)[window.currentRouteIndex[mode]]);
       routeLayer.eachLayer(item => targetLayer.addLayer(item));
       clearPathDraft();
@@ -2838,6 +3024,7 @@ function showActiveRouteDetails(context) {
         <button class="primary-action" type="submit">Save name</button>
         <button class="panel-action" id="cancel-rename-route" type="button">Cancel</button>
       </div>
+      <p class="route-workflow-error" id="rename-save-error" role="alert" hidden></p>
     </form>` : `<div class="panel-heading active-route-heading">
       <div class="panel-eyebrow"><i class="fa-solid fa-circle" aria-hidden="true"></i> On map</div>
       <h2 class="route-title">${escapeHtml(currentRoute.name || 'Untitled route')}</h2>
@@ -2937,7 +3124,12 @@ function showActiveRouteDetails(context) {
       event.preventDefault();
       const name = input.value.trim();
       if (!name) return;
-      window.renameRouteInList(context.mode, context.index, name);
+      if (!window.renameRouteInList(context.mode, context.index, name)) {
+        const error = panelContent.querySelector('#rename-save-error');
+        error.textContent = routeStorageMessage(context.mode, 'Could not save route name');
+        error.hidden = false;
+        return;
+      }
       renamingRoute = false;
       routePanelNotice = 'Route name updated.';
       showRoutePanelContent();
@@ -3009,7 +3201,10 @@ function showActiveRouteDetails(context) {
   panelContent.querySelectorAll('[data-route-color]').forEach(button => {
     button.onclick = function() {
       const color = button.dataset.routeColor;
-      if (!window.updateRouteColorInList(context.mode, context.index, color)) return;
+      if (!window.updateRouteColorInList(context.mode, context.index, color)) {
+        showInlineStorageError(context.mode, 'Could not save route colour');
+        return;
+      }
       const routeLayer = context.mode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
       window.applyRouteStyle(routeLayer, context.mode, { color });
       if (routeDisplayMode[context.mode] !== 'solid') setSolidRouteVisibility(context.mode, { color }, false);
@@ -3054,7 +3249,10 @@ function showActiveRouteDetails(context) {
       showRoutePanelContent();
     };
     panelContent.querySelector('#confirm-delete-route').onclick = function() {
-      window.deleteRouteFromList(context.mode, context.index);
+      if (!window.deleteRouteFromList(context.mode, context.index)) {
+        showInlineStorageError(context.mode, 'Could not delete route');
+        return;
+      }
       if (context.mode === 'uk') {
         clearSteepnessDisplay('uk');
         window.routeLayerUK.clearLayers();
@@ -3105,10 +3303,14 @@ function updateRouteFabLabel() {
 
 function showRoutePanelContent() {
   panel.classList.toggle('route-workflow-view', drawingMode || editingMode || notePlacementMode);
+  if (panelView === 'backup') { showRouteBackup(); return; }
+  if (panelView === 'settings') { showSettings(); return; }
   if (sharedRouteImport) {
     panel.classList.remove('library-view');
     panelContent.className = 'route-detail-content';
-    panelContent.innerHTML = `<div class="panel-heading workflow-heading"><div class="panel-eyebrow">Shared route</div><h2 class="route-title">${sharedRouteImport.waiting ? 'Finding walking paths' : 'Could not load route'}</h2><p class="panel-hint">${escapeHtml(sharedRouteImport.message)}</p></div>`;
+    panelContent.innerHTML = `<div class="panel-heading workflow-heading"><div class="panel-eyebrow">Shared route</div><h2 class="route-title">${sharedRouteImport.waiting ? 'Finding walking paths' : 'Could not save route'}</h2><p class="panel-hint">${escapeHtml(sharedRouteImport.message)}</p></div>${sharedRouteImport.retry ? '<button id="retry-shared-route" class="primary-action" type="button">Retry save</button>' : ''}`;
+    const retry = panelContent.querySelector('#retry-shared-route');
+    if (retry) retry.onclick = sharedRouteImport.retry;
     return;
   }
   if (snapPreview) {
@@ -3143,6 +3345,8 @@ function showRoutePanelContent() {
     showRouteCreationOptions();
     return;
   }
+  if (panelView !== 'backup' && panelView !== 'settings' && unsavedRouteDraft) { showUnsavedRoute(); return; }
+  if (panelView !== 'backup' && panelView !== 'settings' && unsavedEditDraft) { showUnsavedEdit(); return; }
   if (drawingMode || editingMode) {
     showRouteWorkflow();
     return;
@@ -3154,10 +3358,6 @@ function showRoutePanelContent() {
   }
   if (noteDraft && context) {
     showNoteForm(context);
-    return;
-  }
-  if (panelView === 'backup') {
-    showRouteBackup();
     return;
   }
   if (panelView === 'offline') {
@@ -3210,10 +3410,6 @@ function showRoutePanelContent() {
       back: () => { panelView = 'details'; showRoutePanelContent(); },
       viewStatus: () => { panelView = 'offline'; showRoutePanelContent(); }
     });
-    return;
-  }
-  if (panelView === 'settings') {
-    showSettings();
     return;
   }
   if (panelView === 'details' && context) {
@@ -3436,11 +3632,13 @@ mapUK.on(L.Draw.Event.CREATED, function (e) {
   drawingMode = false;
   editingMode = false;
   if (e.layerType === 'polyline') {
-    clearSteepnessDisplay('uk');
     const defaultName = getDefaultRouteName('uk');
+    const index = window.saveRouteToList('uk', defaultName, e.layer);
+    if (!Number.isInteger(index)) { keepUnsavedRoute('uk', e.layer, null, defaultName); return; }
+    clearSteepnessDisplay('uk');
     window.routeLayerUK.clearLayers();
     window.routeNotesLayerUK.clearLayers();
-    window.currentRouteIndex.uk = window.saveRouteToList('uk', defaultName, e.layer);
+    window.currentRouteIndex.uk = index;
     window.applyRouteStyle(e.layer, 'uk', window.getRouteList('uk')[window.currentRouteIndex.uk]);
     window.routeLayerUK.addLayer(e.layer);
     window.updateRouteListUI('uk');
@@ -3459,11 +3657,13 @@ mapWorld.on(L.Draw.Event.CREATED, function (e) {
   drawingMode = false;
   editingMode = false;
   if (e.layerType === 'polyline') {
-    clearSteepnessDisplay('world');
     const defaultName = getDefaultRouteName('world');
+    const index = window.saveRouteToList('world', defaultName, e.layer);
+    if (!Number.isInteger(index)) { keepUnsavedRoute('world', e.layer, null, defaultName); return; }
+    clearSteepnessDisplay('world');
     window.routeLayerWorld.clearLayers();
     window.routeNotesLayerWorld.clearLayers();
-    window.currentRouteIndex.world = window.saveRouteToList('world', defaultName, e.layer);
+    window.currentRouteIndex.world = index;
     window.applyRouteStyle(e.layer, 'world', window.getRouteList('world')[window.currentRouteIndex.world]);
     window.routeLayerWorld.addLayer(e.layer);
     window.updateRouteListUI('world');
@@ -3483,10 +3683,15 @@ mapUK.on(L.Draw.Event.EDITED, function (e) {
   drawingMode = false;
   let idx = window.currentRouteIndex.uk;
   if (idx == null) return;
+  let saved = true;
   e.layers.eachLayer(function(layer) {
-    let geojson = layer.toGeoJSON();
-    window.updateRouteInList('uk', idx, geojson);
+    const geojson = layer.toGeoJSON();
+    if (!window.updateRouteInList('uk', idx, geojson)) {
+      saved = false;
+      unsavedEditDraft = { mode: 'uk', index: idx, id: window.getRouteList('uk')[idx]?.id, geojson, error: routeStorageMessage('uk') };
+    }
   });
+  if (!saved) { panelView = 'unsaved-edit'; showRoutePanelContent(); return; }
   panelView = 'details';
   routePanelNotice = 'Route changes saved.';
   showRoutePanelContent();
@@ -3497,10 +3702,15 @@ mapWorld.on(L.Draw.Event.EDITED, function (e) {
   drawingMode = false;
   let idx = window.currentRouteIndex.world;
   if (idx == null) return;
+  let saved = true;
   e.layers.eachLayer(function(layer) {
-    let geojson = layer.toGeoJSON();
-    window.updateRouteInList('world', idx, geojson);
+    const geojson = layer.toGeoJSON();
+    if (!window.updateRouteInList('world', idx, geojson)) {
+      saved = false;
+      unsavedEditDraft = { mode: 'world', index: idx, id: window.getRouteList('world')[idx]?.id, geojson, error: routeStorageMessage('world') };
+    }
   });
+  if (!saved) { panelView = 'unsaved-edit'; showRoutePanelContent(); return; }
   panelView = 'details';
   routePanelNotice = 'Route changes saved.';
   showRoutePanelContent();
@@ -3553,7 +3763,7 @@ mapWorld.on('moveend zoomend', saveMapState);
 async function importSharedRoute(sharedRoute) {
   if (!sharedRoute) return;
   const sharedMode = currentMode || 'uk';
-  if (sharedRoute.routing) {
+  if (sharedRoute.routing && !sharedRoute.geojson) {
     sharedRouteImport = { waiting: true, message: 'Rebuilding this shared walking route from its saved control waypoints…' };
     setRoutePanelOpen(true);
     showRoutePanelContent();
@@ -3569,11 +3779,17 @@ async function importSharedRoute(sharedRoute) {
   const layer = L.geoJSON(sharedRoute.geojson, { style: window.getRouteStyle(sharedMode, sharedRoute) });
   if (!layer.getBounds().isValid()) return;
   const targetLayer = sharedMode === 'uk' ? window.routeLayerUK : window.routeLayerWorld;
+  const importedIndex = window.saveRouteToList(sharedMode, sharedRoute.name || getDefaultRouteName(sharedMode), layer, sharedRoute.routing, {
+    color: sharedRoute.color, annotations: sharedRoute.annotations
+  });
+  if (!Number.isInteger(importedIndex)) {
+    sharedRouteImport = { waiting: false, message: routeStorageMessage(sharedMode, 'Could not save shared route'), retry: () => importSharedRoute(sharedRoute) };
+    setRoutePanelOpen(true);
+    showRoutePanelContent();
+    return;
+  }
   targetLayer.clearLayers();
   layer.eachLayer(l => targetLayer.addLayer(l));
-  const importedIndex = window.saveRouteToList(sharedMode, sharedRoute.name || getDefaultRouteName(sharedMode), layer, sharedRoute.routing);
-  if (sharedRoute.color) window.updateRouteColorInList(sharedMode, importedIndex, sharedRoute.color);
-  if (Array.isArray(sharedRoute.annotations)) window.updateRouteAnnotationsInList(sharedMode, importedIndex, sharedRoute.annotations);
   const importedRoute = window.getRouteList(sharedMode)[importedIndex];
   window.applyRouteStyle(targetLayer, sharedMode, importedRoute);
   window.currentRouteIndex[sharedMode] = importedIndex;
@@ -3592,7 +3808,7 @@ function canSwitchMapMode() {
   if (navigation || trackRecording) {
     return { allowed: false, reason: 'Finish the current walk before switching maps.' };
   }
-  if (drawingMode || editingMode || pathDraft || snapPreview || routedEdit || sharedRouteImport || notePlacementMode || noteDraft) {
+  if (drawingMode || editingMode || pathDraft || snapPreview || routedEdit || sharedRouteImport || notePlacementMode || noteDraft || unsavedRouteDraft || unsavedEditDraft) {
     return { allowed: false, reason: 'Finish or cancel the current route action before switching maps.' };
   }
   return { allowed: true };

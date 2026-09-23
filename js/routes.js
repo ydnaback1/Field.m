@@ -1,12 +1,61 @@
 // js/routes.js
 
-function readRouteList(mode) {
-    const key = 'routeList_' + mode;
-    let arr = [];
+const routeStorageErrors = { uk: null, world: null };
+const lastMalformedRouteRaw = { uk: null, world: null };
+
+function routeStorageFailure(error, operation) {
+    console.warn(`Route storage ${operation} failed`, error);
+    const name = error?.name;
+    const code = operation === 'read' || name === 'SecurityError' ? 'blocked'
+        : name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED' || error?.code === 22 || error?.code === 1014
+            ? 'quota' : 'write-failed';
+    return { ok: false, code };
+}
+
+function readRouteStorage(mode) {
+    let raw;
+    try { raw = localStorage.getItem(`routeList_${mode}`); }
+    catch (error) { return routeStorageFailure(error, 'read'); }
+    if (raw === null || raw === '') {
+        lastMalformedRouteRaw[mode] = null;
+        return { ok: true, routes: [], raw };
+    }
     try {
-        arr = JSON.parse(localStorage.getItem(key) || "[]");
-    } catch(e) {}
-    return Array.isArray(arr) ? arr : [];
+        const routes = JSON.parse(raw);
+        if (Array.isArray(routes)) {
+            lastMalformedRouteRaw[mode] = null;
+            return { ok: true, routes, raw };
+        }
+    } catch (error) {
+        if (lastMalformedRouteRaw[mode] !== raw) console.warn(`Saved ${mode} route data could not be parsed`, error);
+    }
+    lastMalformedRouteRaw[mode] = raw;
+    return { ok: false, code: 'malformed', raw };
+}
+
+function writeRouteStorage(mode, routes) {
+    const current = readRouteStorage(mode);
+    if (!current.ok) return routeStorageErrors[mode] = current;
+    let serialized;
+    try { serialized = JSON.stringify(routes); }
+    catch (error) { return routeStorageErrors[mode] = routeStorageFailure(error, 'write'); }
+    try { localStorage.setItem(`routeList_${mode}`, serialized); }
+    catch (error) { return routeStorageErrors[mode] = routeStorageFailure(error, 'write'); }
+    routeStorageErrors[mode] = null;
+    return { ok: true };
+}
+
+function mutateRouteStorage(mode, change) {
+    const current = readRouteStorage(mode);
+    if (!current.ok) return routeStorageErrors[mode] = current;
+    const result = change(current.routes);
+    if (result === false) return { ok: false, code: 'missing-route' };
+    return writeRouteStorage(mode, current.routes);
+}
+
+function readRouteList(mode) {
+    const result = readRouteStorage(mode);
+    return result.ok ? result.routes : [];
 }
 
 function getRouteList(mode) {
@@ -48,13 +97,11 @@ function getAllRouteIds() {
 
 function migrateStoredRouteIds() {
     if (typeof localStorage === 'undefined') return;
-    const lists = { uk: readRouteList('uk'), world: readRouteList('world') };
     const usedIds = new Set();
     ['uk', 'world'].forEach(mode => {
-        if (ensureRouteListIds(lists[mode], usedIds)) {
-            try { localStorage.setItem(`routeList_${mode}`, JSON.stringify(lists[mode])); }
-            catch (_) { /* A full/blocked store must not prevent the map from starting. */ }
-        }
+        const result = readRouteStorage(mode);
+        if (!result.ok) return;
+        if (ensureRouteListIds(result.routes, usedIds)) writeRouteStorage(mode, result.routes);
     });
 }
 
@@ -119,11 +166,13 @@ function validateBackupRoute(route) {
 
 function exportRouteBackup() {
     const routes = {};
-    ['uk', 'world'].forEach(mode => {
-        routes[mode] = getRouteList(mode)
+    for (const mode of ['uk', 'world']) {
+        const result = readRouteStorage(mode);
+        if (!result.ok) return result;
+        routes[mode] = result.routes
             .filter(validateBackupRoute)
             .map(copySupportedRouteRecord);
-    });
+    }
     return {
         type: ROUTE_BACKUP_TYPE,
         version: ROUTE_BACKUP_VERSION,
@@ -161,20 +210,35 @@ function validateRouteBackup(backup) {
 }
 
 function saveImportedRouteLists(nextLists) {
-    const previous = { uk: localStorage.getItem('routeList_uk'), world: localStorage.getItem('routeList_world') };
-    const serialized = { uk: JSON.stringify(nextLists.uk), world: JSON.stringify(nextLists.world) };
+    let serialized;
+    try { serialized = { uk: JSON.stringify(nextLists.uk), world: JSON.stringify(nextLists.world) }; }
+    catch (error) { return { valid: false, ...routeStorageFailure(error, 'write'), error: 'The backup could not be prepared.' }; }
+    const previous = {};
+    try {
+        previous.uk = localStorage.getItem('routeList_uk');
+        previous.world = localStorage.getItem('routeList_world');
+    } catch (error) {
+        return { valid: false, ...routeStorageFailure(error, 'read'), error: 'Browser storage is not available. The backup was not imported.' };
+    }
+    const written = [];
     try {
         localStorage.setItem('routeList_uk', serialized.uk);
+        written.push('uk');
         localStorage.setItem('routeList_world', serialized.world);
+        written.push('world');
         return { valid: true };
     } catch (error) {
-        try {
-            ['uk', 'world'].forEach(mode => {
+        const failure = routeStorageFailure(error, 'write');
+        const rollbackFailures = [];
+        written.reverse().forEach(mode => {
+            try {
                 if (previous[mode] === null) localStorage.removeItem(`routeList_${mode}`);
                 else localStorage.setItem(`routeList_${mode}`, previous[mode]);
-            });
-        } catch (restoreError) {}
-        return { valid: false, error: 'There was not enough local storage space to import this backup.' };
+            } catch (restoreError) { rollbackFailures.push(mode); routeStorageFailure(restoreError, 'write'); }
+        });
+        return { valid: false, code: failure.code, rollbackFailed: rollbackFailures.length > 0,
+            error: rollbackFailures.length ? `Backup import failed and ${rollbackFailures.join(' and ')} route data could not be restored. Check your saved routes before retrying.`
+                : failure.code === 'quota' ? 'Browser storage is full. The backup was not imported.' : 'Browser storage is not available. The backup was not imported.' };
     }
 }
 
@@ -182,7 +246,14 @@ function applyRouteBackup(backup, strategy) {
     const result = validateRouteBackup(backup);
     if (!result.valid) return result;
     if (strategy !== 'merge' && strategy !== 'replace') return { valid: false, error: 'Choose how to import this backup.' };
-    const current = { uk: getRouteList('uk'), world: getRouteList('world') };
+    const current = {};
+    for (const mode of ['uk', 'world']) {
+        const stored = readRouteStorage(mode);
+        if (!stored.ok && (strategy === 'merge' || stored.code !== 'malformed')) {
+            return { valid: false, code: stored.code, error: stored.code === 'malformed' ? 'Saved route data could not be read. Download a recovery copy or restore a backup first.' : 'Browser storage is not available. The backup was not imported.' };
+        }
+        current[mode] = stored.ok ? stored.routes : [];
+    }
     const imported = { uk: result.backup.routes.uk.map(copySupportedRouteRecord), world: result.backup.routes.world.map(copySupportedRouteRecord) };
     const existingIds = strategy === 'merge'
         ? new Set([...current.uk, ...current.world].map(route => route && route.id).filter(Boolean))
@@ -233,56 +304,65 @@ function applyRouteStyle(layer, mode, route) {
 
 function saveRouteToList(mode, name, layer, routing, metadata) {
     const geojson = layer.toGeoJSON();
-    let arr = getRouteList(mode);
+    if (!hasValidRouteCoordinates(geojson)) return null;
     const now = new Date().toISOString();
     const route = { name, geojson, createdAt: now, updatedAt: now };
     if (routing) route.routing = routing;
     if (metadata && typeof metadata.sourceRouteId === 'string' && metadata.sourceRouteId) route.sourceRouteId = metadata.sourceRouteId;
     if (metadata && isPlainRouteObject(metadata.activity)) route.activity = metadata.activity;
+    if (metadata && typeof metadata.color === 'string') route.color = metadata.color;
+    if (metadata && Array.isArray(metadata.annotations) && metadata.annotations.every(hasValidRouteAnnotation)) route.annotations = metadata.annotations;
     ensureRouteId(route, getAllRouteIds());
-    arr.push(route);
-    localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
-    return arr.length - 1;
+    let index = null;
+    const result = mutateRouteStorage(mode, arr => { index = arr.push(route) - 1; });
+    return result.ok ? index : null;
 }
 
 function updateRouteInList(mode, idx, geojson) {
-    let arr = getRouteList(mode);
-    if (arr[idx]) {
+    if (!hasValidRouteCoordinates(geojson)) return false;
+    const result = mutateRouteStorage(mode, arr => {
+        if (!arr[idx]) return false;
         arr[idx].geojson = geojson;
         // Elevation belongs to this exact displayed line. Any geometry replacement
         // (including editing or future route snapping) makes it stale.
         delete arr[idx].elevation;
-        if (typeof window.clearSteepnessDisplay === 'function') window.clearSteepnessDisplay(mode);
         arr[idx].updatedAt = new Date().toISOString();
-        localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
-        return true;
-    }
-    return false;
+    });
+    if (result.ok && typeof window.clearSteepnessDisplay === 'function') window.clearSteepnessDisplay(mode);
+    return result.ok;
 }
 
 function updateRouteElevationInList(mode, idx, elevation) {
-    const arr = getRouteList(mode);
-    if (!arr[idx]) return false;
-    arr[idx].elevation = elevation;
-    arr[idx].updatedAt = new Date().toISOString();
-    localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
-    return true;
+    return mutateRouteStorage(mode, arr => {
+        if (!arr[idx]) return false;
+        arr[idx].elevation = elevation;
+        arr[idx].updatedAt = new Date().toISOString();
+    }).ok;
 }
 
 function replaceRouteGeometryInList(mode, idx, geojson, routing) {
-    let arr = getRouteList(mode);
-    if (!arr[idx] || !geojson) return false;
-    arr[idx].geojson = geojson;
-    if (routing) arr[idx].routing = routing;
-    else delete arr[idx].routing;
-    // Geometry-derived data must never survive a geometry replacement.
-    delete arr[idx].elevation;
-    delete arr[idx].elevationData;
-    delete arr[idx].cachedElevation;
-    if (typeof window.clearSteepnessDisplay === 'function') window.clearSteepnessDisplay(mode);
-    arr[idx].updatedAt = new Date().toISOString();
-    localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
-    return true;
+    if (!hasValidRouteCoordinates(geojson)) return false;
+    const result = mutateRouteStorage(mode, arr => {
+        if (!arr[idx]) return false;
+        arr[idx].geojson = geojson;
+        if (routing) arr[idx].routing = routing;
+        else delete arr[idx].routing;
+        // Geometry-derived data must never survive a geometry replacement.
+        delete arr[idx].elevation;
+        delete arr[idx].elevationData;
+        delete arr[idx].cachedElevation;
+        arr[idx].updatedAt = new Date().toISOString();
+    });
+    if (result.ok && typeof window.clearSteepnessDisplay === 'function') window.clearSteepnessDisplay(mode);
+    return result.ok;
+}
+
+function restoreRouteRecordInList(mode, idx, original) {
+    if (!validateBackupRoute(original)) return false;
+    return mutateRouteStorage(mode, arr => {
+        if (!arr[idx] || arr[idx].id !== original.id) return false;
+        arr[idx] = original;
+    }).ok;
 }
 
 const ELEVATION_SAMPLE_INTERVAL_METERS = 60;
@@ -441,25 +521,19 @@ async function fetchRouteElevation(mode, idx) {
 }
 
 function renameRouteInList(mode, idx, name) {
-    let arr = getRouteList(mode);
-    if (arr[idx]) {
+    return mutateRouteStorage(mode, arr => {
+        if (!arr[idx]) return false;
         arr[idx].name = name;
         arr[idx].updatedAt = new Date().toISOString();
-        localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
-        return true;
-    }
-    return false;
+    }).ok;
 }
 
 function updateRouteColorInList(mode, idx, color) {
-    let arr = getRouteList(mode);
-    if (arr[idx]) {
+    return mutateRouteStorage(mode, arr => {
+        if (!arr[idx]) return false;
         arr[idx].color = color;
         arr[idx].updatedAt = new Date().toISOString();
-        localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
-        return true;
-    }
-    return false;
+    }).ok;
 }
 
 function getRouteAnnotations(route) {
@@ -467,14 +541,12 @@ function getRouteAnnotations(route) {
 }
 
 function updateRouteAnnotationsInList(mode, idx, annotations) {
-    let arr = getRouteList(mode);
-    if (arr[idx]) {
+    if (!Array.isArray(annotations) || !annotations.every(hasValidRouteAnnotation)) return false;
+    return mutateRouteStorage(mode, arr => {
+        if (!arr[idx]) return false;
         arr[idx].annotations = annotations;
         arr[idx].updatedAt = new Date().toISOString();
-        localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
-        return true;
-    }
-    return false;
+    }).ok;
 }
 
 function saveRouteAnnotation(mode, idx, annotation) {
@@ -503,11 +575,19 @@ function deleteRouteAnnotation(mode, idx, annotationId) {
 }
 
 function deleteRouteFromList(mode, index) {
-    let arr = getRouteList(mode);
-    if (!arr[index]) return false;
-    arr.splice(index, 1);
-    localStorage.setItem('routeList_' + mode, JSON.stringify(arr));
-    return true;
+    return mutateRouteStorage(mode, arr => {
+        if (!arr[index]) return false;
+        arr.splice(index, 1);
+    }).ok;
+}
+
+function resetDamagedRouteStorage(mode) {
+    const current = readRouteStorage(mode);
+    if (current.ok || current.code !== 'malformed') return { ok: false, code: current.ok ? 'not-damaged' : current.code };
+    try { localStorage.setItem(`routeList_${mode}`, '[]'); }
+    catch (error) { return routeStorageFailure(error, 'write'); }
+    routeStorageErrors[mode] = null;
+    return { ok: true };
 }
 
 function updateRouteListUI(mode) {
@@ -554,12 +634,17 @@ function loadRouteByIndex(mode, idx) {
 }
 
 window.getRouteList = getRouteList;
+window.readRouteStorage = readRouteStorage;
+window.getRouteStorageError = mode => routeStorageErrors[mode];
+window.resetDamagedRouteStorage = resetDamagedRouteStorage;
 window.saveRouteToList = saveRouteToList;
 window.updateRouteInList = updateRouteInList;
 window.fetchRouteElevation = fetchRouteElevation;
 window.replaceRouteGeometryInList = replaceRouteGeometryInList;
+window.restoreRouteRecordInList = restoreRouteRecordInList;
 window.renameRouteInList = renameRouteInList;
 window.updateRouteColorInList = updateRouteColorInList;
+window.updateRouteAnnotationsInList = updateRouteAnnotationsInList;
 window.getRouteAnnotations = getRouteAnnotations;
 window.saveRouteAnnotation = saveRouteAnnotation;
 window.deleteRouteAnnotation = deleteRouteAnnotation;
