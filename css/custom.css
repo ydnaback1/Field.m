@@ -28,6 +28,9 @@ select {
   font: inherit;
 }
 
+/* Component display rules must not expose controls marked unavailable by JS. */
+[hidden] { display: none !important; }
+
 /* Theme tokens */
 :root {
   color-scheme: light dark;
@@ -1816,24 +1819,7 @@ select {
   55% { opacity: 0.05; transform: translate(-50%, -50%) scale(2.1); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .navigation-position-marker .navigation-position-halo { animation: none; opacity: 0.14; }
 
-  #bottom-panel,
-  .leaflet-top.leaflet-right,
-  .globe-btn,
-  #panel-close,
-  #panel-content input,
-  #panel-content select,
-  #panel-content button,
-  #fab-route,
-  .route-walk-history-toggle i,
-  .route-disclosure summary > i,
-  .route-more-actions summary i,
-  .navigation-elevation summary i {
-    transition: none;
-  }
-}
 
 .navigation-elevation {
   margin: 0 0 14px;
@@ -2798,5 +2784,25 @@ select {
 
   #panel-content .danger-action {
     color: #ff9a94;
+  }
+}
+
+/* Apply motion preferences after all component and responsive rules. */
+@media (prefers-reduced-motion: reduce) {
+  .navigation-position-marker .navigation-position-halo { animation: none; opacity: 0.14; }
+
+  #bottom-panel,
+  .leaflet-top.leaflet-right,
+  .globe-btn,
+  #panel-close,
+  #panel-content input,
+  #panel-content select,
+  #panel-content button,
+  #fab-route,
+  .route-walk-history-toggle i,
+  .route-disclosure summary > i,
+  .route-more-actions summary i,
+  .navigation-elevation summary i {
+    transition: none;
   }
 }
