@@ -62,7 +62,10 @@ window.makeRouteControl = function(map, mode, featureGroup, drawOpts) {
                 document.getElementById(`delete-route-${mode}`).onclick = function() {
                     const idx = document.getElementById(`route-list-${mode}`).value;
                     if (idx === '' || idx === null) return;
-                    window.deleteRouteFromList(mode, idx);
+                    if (!window.deleteRouteFromList(mode, idx)) {
+                        window.alert('Could not delete route. Saved route data was not changed.');
+                        return;
+                    }
                     window.updateRouteListUI(mode);
                     featureGroup.clearLayers();
                 };
