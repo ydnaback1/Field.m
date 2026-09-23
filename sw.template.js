@@ -1,6 +1,7 @@
 const BUILD_ID = "__FIELD_MAPS_BUILD_ID__";
 const CACHE_PREFIX = "field-maps-app-";
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
+importScripts("./js/offline-maps.js");
 const APP_ASSETS = [
   "./",
   "index.html",
@@ -40,6 +41,7 @@ const APP_ASSETS = [
   "plugins/leaflet-measure/leaflet.measure.js",
   "config.js",
   "js/pwa.js",
+  "js/offline-maps.js",
   "js/layers.js",
   "js/search.js",
   "js/controls.js",
@@ -73,6 +75,25 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const requestUrl = new URL(event.request.url);
+
+  const canonicalOsTile = event.request.method === "GET"
+    ? FieldMapsOfflineMaps.canonicalizeOsTileUrl(event.request.url) : null;
+  if (canonicalOsTile) {
+    event.respondWith((async () => {
+      try {
+        return await fetch(event.request);
+      } catch (error) {
+        const cacheNames = await caches.keys();
+        for (const name of cacheNames) {
+          if (!name.startsWith(FieldMapsOfflineMaps.CACHE_PREFIX)) continue;
+          const cached = await (await caches.open(name)).match(canonicalOsTile);
+          if (cached) return cached;
+        }
+        throw error;
+      }
+    })());
+    return;
+  }
 
   if (
     event.request.method !== "GET" ||

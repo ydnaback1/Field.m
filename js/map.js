@@ -1959,6 +1959,11 @@ function showSettings() {
       <h3 id="settings-data-title">Data &amp; storage</h3>
       <p>Export, validate, restore, merge, or replace saved route backups.</p>
       <button id="open-data-storage" class="secondary-action" type="button"><i class="fa-solid fa-database" aria-hidden="true"></i> Route backup &amp; storage</button>
+    </section>
+    <section class="route-backup-section" aria-labelledby="settings-offline-title">
+      <h3 id="settings-offline-title">Offline maps (Test)</h3>
+      <p>Download a small OS Outdoor area on the UK map.</p>
+      <button id="open-offline-maps" class="secondary-action" type="button">Open offline maps test</button>
     </section>`;
   panelContent.querySelector('#open-measure-tool').onclick = function() {
     setRoutePanelOpen(false);
@@ -1967,6 +1972,10 @@ function showSettings() {
   panelContent.querySelector('#open-data-storage').onclick = function() {
     panelView = 'backup';
     routeBackupNotice = '';
+    showRoutePanelContent();
+  };
+  panelContent.querySelector('#open-offline-maps').onclick = function() {
+    panelView = 'offline';
     showRoutePanelContent();
   };
 }
@@ -3026,6 +3035,20 @@ function showRoutePanelContent() {
   }
   if (panelView === 'backup') {
     showRouteBackup();
+    return;
+  }
+  if (panelView === 'offline') {
+    panelContent.className = 'route-detail-content route-backup-content settings-content';
+    window.FieldMapsOfflineMaps.render(panelContent, {
+      mode: () => currentMode,
+      isOutdoor: () => mapUK.hasLayer(ukBaseLayers['OS Outdoor']),
+      bounds: () => mapUK.getBounds(),
+      crs: mapUK.options.crs,
+      layer: ukBaseLayers['OS Outdoor'],
+      hasKey: () => Boolean(CONFIG.apiKey),
+      tileSize: ukBaseLayers['OS Outdoor'].getTileSize().x,
+      back: () => { panelView = 'settings'; showRoutePanelContent(); }
+    });
     return;
   }
   if (panelView === 'settings') {
