@@ -69,10 +69,42 @@
   }
 
   function matchingPack(packs, selection) {
-    return packs.find(pack => pack.sourceRouteId === selection.sourceRouteId && pack.layer === selection.layer &&
+    return packs.find(pack => (pack.sourceRouteId || null) === (selection.sourceRouteId || null) && pack.layer === selection.layer &&
       pack.minZoom === selection.minZoom && pack.maxZoom === selection.maxZoom &&
       pack.bounds && ['west', 'east', 'south', 'north'].every(key =>
         Math.abs(pack.bounds[key] - selection.bounds[key]) < 1e-7));
+  }
+
+  function visibleAreaBounds(topLeft, bottomRight) {
+    const points = [topLeft, bottomRight];
+    if (points.some(point => !point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)))
+      throw new Error('Current visible map area is unavailable.');
+    const bounds = { west: Math.min(...points.map(p => p.lng)), east: Math.max(...points.map(p => p.lng)),
+      south: Math.min(...points.map(p => p.lat)), north: Math.max(...points.map(p => p.lat)) };
+    if (bounds.west >= bounds.east || bounds.south >= bounds.north) throw new Error('Current visible map area is unavailable.');
+    return bounds;
+  }
+
+  function formatSize(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) return 'Unknown';
+    const units = ['bytes', 'KB', 'MB', 'GB'];
+    let value = bytes; let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+    return (unit ? (value >= 10 ? Math.round(value) : Math.round(value * 10) / 10) : Math.round(value)) + ' ' + units[unit];
+  }
+
+  function packPresentation(pack, routes, calculateRouteBounds) {
+    const route = pack.sourceRouteId && routes.find(item => item?.id === pack.sourceRouteId);
+    let annotation = '';
+    if (pack.sourceRouteId && !route) annotation = 'Route deleted';
+    else if (route && calculateRouteBounds && pack.bounds) {
+      try {
+        if (!matchingPack([{ ...pack, bounds: calculateRouteBounds(route) }], pack)) annotation = 'Route changed';
+      } catch (_) { /* An old or invalid route should not hide its map. */ }
+    }
+    return { name: route?.name || pack.name || (pack.sourceRouteId ? 'Offline route map' : 'Offline area — ' + packLabel(pack)),
+      detail: pack.detailPreset === 'detailed' || (!pack.detailPreset && pack.maxZoom >= 10) ? 'Detailed' : 'Standard',
+      annotation, complete: pack.status === 'complete' };
   }
 
   function openDb() {
@@ -116,9 +148,9 @@
 
   async function download(pack, layer, crs, tileSize, hasKey, progress) {
     if (active) throw new Error('A download is already running.');
-    if (!hasKey) throw new Error('OS map key unavailable. Connect online before downloading.');
+    if (!hasKey || navigator.onLine === false) throw new Error('Connect to the internet to download another map.');
     const tiles = enumerateTiles(pack.bounds, pack.minZoom, pack.maxZoom, crs, tileSize);
-    if (tiles.length > TILE_LIMIT) throw new Error('This route area is too large at the selected detail. Try Standard detail.');
+    if (tiles.length > TILE_LIMIT) throw new Error('This area is too large at the selected detail. Zoom in or choose Standard detail.');
     const controller = new AbortController();
     active = controller;
     activeProgress = { id: pack.id, done: pack.completedTileCount || 0, total: tiles.length };
@@ -214,44 +246,162 @@ function packLabel(pack) {
   async function render(container, context) {
     container.innerHTML = '<div class="panel-navigation"><button id="back-to-settings-from-offline" class="panel-back" type="button">‹ Settings</button></div>' +
       '<div class="panel-heading workflow-heading"><div class="panel-eyebrow">Settings</div><h2 class="route-title">Offline maps</h2></div>' +
-      '<section class="route-backup-section"><div id="offline-pack-list"></div><p id="offline-notice" class="route-backup-notice" role="status"></p></section>';
+      '<section class="route-backup-section"><button id="offline-current-area" class="primary-action" type="button">Download current area</button>' +
+      '<p id="offline-connectivity" class="panel-hint"></p></section>' +
+      '<section class="route-backup-section"><h3>Storage</h3><p id="offline-storage" class="panel-hint">Checking browser storage…</p>' +
+      '<p class="panel-hint">Browser estimates include cache accounting; quota is not guaranteed device space.</p></section>' +
+      '<section class="route-backup-section"><h3>Downloaded maps</h3><div id="offline-pack-list"></div><p id="offline-notice" class="route-backup-notice" role="status"></p></section>';
     container.querySelector('#back-to-settings-from-offline').onclick = context.back;
     const notice = container.querySelector('#offline-notice');
+    const connectivity = container.querySelector('#offline-connectivity');
+    const updateConnectivity = () => { if (connectivity.isConnected) connectivity.textContent = navigator.onLine === false
+      ? "You're offline. Downloaded maps remain available." : 'Offline maps ready for use without a connection.'; };
+    updateConnectivity();
+    window.addEventListener('online', updateConnectivity, { once: true });
+    window.addEventListener('offline', updateConnectivity, { once: true });
+    const refreshStorage = async () => {
+      const target = container.querySelector('#offline-storage');
+      if (!target) return;
+      try {
+        const estimate = await navigator.storage?.estimate?.();
+        const persisted = await navigator.storage?.persisted?.();
+        if (!target.isConnected) return;
+        const approximate = value => Number.isFinite(value) ? '~' + formatSize(value) : 'Unknown';
+        target.textContent = 'Used by Field Maps: ' + approximate(estimate?.usage) + '\n' +
+          'Browser quota: ' + approximate(estimate?.quota) + '\n' +
+          'Persistent storage: ' + (typeof persisted === 'boolean' ? (persisted ? 'Yes' : 'No') : 'Unknown');
+      } catch (_) { if (target.isConnected) target.textContent = 'Browser storage information unavailable.\nPersistent storage: Unknown'; }
+    };
+    container.querySelector('#offline-current-area').onclick = () => context.currentArea();
     const refresh = async () => {
       const target = container.querySelector('#offline-pack-list');
       if (!target) return;
       try {
         const packs = await listPacks();
         target.replaceChildren();
-        if (!packs.length) { target.textContent = 'No offline maps stored yet. Open a saved UK route to download one.'; return; }
-        for (const pack of packs.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))) {
+        if (!packs.length) { target.textContent = 'No offline maps stored yet.'; return; }
+        const routes = context.routes();
+        for (const pack of packs.sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))) {
           const row = document.createElement('div');
           row.className = 'offline-pack-row';
-          const label = document.createElement('p');
-          label.textContent = (pack.name || packLabel(pack)) + ' · ' +
-            (pack.status === 'complete' ? 'Complete' : 'Incomplete') + ' · ' +
-            (pack.completedTileCount || 0) + ' / ' + (pack.tileCount || 0) + ' tiles';
-          row.append(label);
+          const presentation = packPresentation(pack, routes, context.routeBounds);
+          const title = document.createElement('strong'); title.textContent = presentation.name; row.append(title);
+          const meta = document.createElement('span'); meta.textContent = packLabel(pack) + ' · ' + presentation.detail; row.append(meta);
+          const status = document.createElement('span'); status.textContent = presentation.complete
+            ? 'Complete · ' + (pack.tileCount || pack.completedTileCount || 0) + ' tiles'
+            : 'Incomplete · ' + (pack.completedTileCount || 0) + ' / ' + (pack.tileCount || 0) + ' tiles'; row.append(status);
+          if (presentation.annotation) { const flag = document.createElement('span'); flag.textContent = presentation.annotation; row.append(flag); }
+          const actions = document.createElement('div'); actions.className = 'offline-pack-actions'; row.append(actions);
+          const view = document.createElement('button'); view.type = 'button'; view.className = 'secondary-action'; view.textContent = 'View';
+          view.setAttribute('aria-label', 'View ' + presentation.name); view.onclick = () => context.view(pack); actions.append(view);
           if (pack.status !== 'complete') {
             const resume = document.createElement('button');
             resume.type = 'button'; resume.className = 'secondary-action'; resume.textContent = 'Resume';
-            resume.disabled = Boolean(active);
-            resume.onclick = () => runPack(pack, context, notice, [resume], refresh);
-            row.append(resume);
+            resume.disabled = Boolean(active) || !context.hasKey() || navigator.onLine === false;
+            resume.setAttribute('aria-label', 'Resume ' + presentation.name);
+            resume.onclick = () => runPack(pack, context, notice, [resume], async () => { await refresh(); await refreshStorage(); });
+            actions.append(resume);
           }
           const remove = document.createElement('button');
           remove.type = 'button'; remove.className = 'secondary-action'; remove.textContent = 'Delete';
+          remove.setAttribute('aria-label', 'Delete ' + presentation.name);
           remove.disabled = Boolean(active);
           remove.onclick = async () => {
-            try { await deletePack(pack); notice.textContent = 'Offline map deleted.'; await refresh(); }
+            if (!window.confirm('Delete this offline map?')) return;
+            try { await deletePack(pack); notice.textContent = 'Offline map deleted.'; await refresh(); await refreshStorage(); }
             catch (error) { notice.textContent = error.message || 'Could not delete offline map.'; }
           };
-          row.append(remove);
+          actions.append(remove);
           target.append(row);
         }
       } catch (_) { notice.textContent = 'Offline pack storage is unavailable.'; }
     };
+    await refreshStorage();
     await refresh();
+  }
+
+  async function renderCurrentArea(container, context) {
+    container.innerHTML = '<div class="panel-navigation"><button id="offline-area-back" class="panel-back" type="button">‹ Offline maps</button></div>' +
+      '<div class="panel-heading workflow-heading"><div class="panel-eyebrow">Offline maps</div><h2 class="route-title">Download current area</h2></div>' +
+      '<section class="route-backup-section offline-route-preview"><dl>' +
+      '<div><dt>Map</dt><dd><select id="offline-style"><option value="Road_27700">Road</option><option value="Outdoor_27700">Outdoor</option><option value="Leisure_27700">Leisure</option></select></dd></div>' +
+      '<div><dt>Detail</dt><dd><label><input type="radio" name="offline-detail" value="standard" checked> Standard</label> <label><input type="radio" name="offline-detail" value="detailed"> Detailed</label></dd></div>' +
+      '<div><dt>Area</dt><dd>Current visible map</dd></div></dl>' +
+      '<p id="offline-tile-count" class="panel-hint"></p><p id="offline-area-notice" class="route-backup-notice" role="status"></p>' +
+      '<div class="route-actions-row"><button id="offline-area-download" class="primary-action" type="button">Download</button>' +
+      '<button id="offline-area-view" class="secondary-action" type="button" hidden>View</button>' +
+      '<button id="offline-area-delete" class="secondary-action" type="button" hidden>Delete</button>' +
+      '<button id="offline-area-cancel" class="panel-action" type="button">Back</button></div></section>';
+    container.querySelector('#offline-area-back').onclick = context.back;
+    const style = container.querySelector('#offline-style');
+    const detailed = container.querySelector('input[value="detailed"]');
+    const count = container.querySelector('#offline-tile-count');
+    const notice = container.querySelector('#offline-area-notice');
+    const downloadButton = container.querySelector('#offline-area-download');
+    const viewButton = container.querySelector('#offline-area-view');
+    const deleteButton = container.querySelector('#offline-area-delete');
+    const cancelButton = container.querySelector('#offline-area-cancel');
+    let selection, existing, revision = 0;
+    // Capture the viewport once after the drawer has laid out. Changing options must not move the area.
+    const areaBounds = await new Promise(resolve => window.requestAnimationFrame(() =>
+      window.requestAnimationFrame(() => { try { resolve(context.currentBounds()); } catch (_) { resolve(null); } })));
+    const update = async () => {
+      const current = ++revision;
+      selection = existing = null;
+      detailed.disabled = style.value === 'Leisure_27700';
+      detailed.closest('label').hidden = detailed.disabled;
+      if (detailed.disabled && detailed.checked) container.querySelector('input[value="standard"]').checked = true;
+      downloadButton.disabled = true; viewButton.hidden = deleteButton.hidden = true;
+      cancelButton.textContent = active ? 'Cancel download' : 'Back';
+      cancelButton.onclick = active ? cancel : context.back;
+      try {
+        const bounds = areaBounds;
+        if (!bounds) throw new Error('Switch to the UK map to download the current area.');
+        const detailPreset = container.querySelector('input[name="offline-detail"]:checked').value;
+        const policy = zoomPolicy(style.value, detailPreset);
+        const layer = context.layers[style.value];
+        const tiles = enumerateTiles(bounds, policy.minZoom, policy.maxZoom, context.crs, layer.getTileSize().x);
+        const candidate = { layer: style.value, detailPreset, bounds, minZoom: policy.minZoom, maxZoom: policy.maxZoom, tileCount: tiles.length };
+        const match = matchingPack(await listPacks(), candidate);
+        if (current !== revision || !count.isConnected) return;
+        selection = candidate; existing = match;
+        count.textContent = tiles.length > TILE_LIMIT ? 'More than 2,000 tiles' : tiles.length + ' tiles';
+        if (!tiles.length || tiles.length > TILE_LIMIT) notice.textContent = 'This area is too large at the selected detail. Zoom in or choose Standard detail.';
+        else if (match?.status === 'complete') {
+          notice.textContent = 'This area is already downloaded.';
+          viewButton.hidden = deleteButton.hidden = false;
+          viewButton.onclick = () => context.view(match);
+          deleteButton.onclick = async () => {
+            if (!window.confirm('Delete this offline map?')) return;
+            try { await deletePack(match); await update(); }
+            catch (error) { notice.textContent = error.message || 'Could not delete offline map.'; }
+          };
+        } else if (!context.hasKey() || navigator.onLine === false) notice.textContent = 'Connect to the internet to download another map.';
+        else {
+          notice.textContent = match ? 'Stored tiles will be kept and missing tiles downloaded.' : 'Keep this page open while downloading.';
+          downloadButton.textContent = match ? 'Resume' : 'Download'; downloadButton.disabled = Boolean(active);
+        }
+      } catch (error) { if (current === revision) { count.textContent = ''; notice.textContent = error.message || 'Current area unavailable.'; } }
+    };
+    style.value = context.defaultLayer;
+    style.onchange = update;
+    container.querySelectorAll('input[name="offline-detail"]').forEach(input => { input.onchange = update; });
+    downloadButton.onclick = async () => {
+      if (!selection || active || existing?.status === 'complete' || !context.hasKey() || navigator.onLine === false) return;
+      const pack = existing || (() => {
+        const id = crypto.randomUUID(); const now = new Date().toISOString();
+        return { id, name: 'Offline area — ' + STYLES[selection.layer], provider: 'os', mapMode: 'uk',
+          ...selection, cacheName: CACHE_PREFIX + id, status: 'incomplete', completedTileCount: 0, createdAt: now, updatedAt: now };
+      })();
+      cancelButton.textContent = 'Cancel download'; cancelButton.onclick = cancel;
+      await runPack(pack, context, notice, [downloadButton], async () => {
+        const outcome = notice.textContent;
+        await update();
+        if (notice.isConnected) notice.textContent = pack.status === 'complete'
+          ? 'Offline map ready · ' + pack.completedTileCount + ' / ' + pack.tileCount + ' tiles' : outcome;
+      });
+    };
+    await update();
   }
 
   async function renderRoute(container, context) {
@@ -362,5 +512,6 @@ function packLabel(pack) {
   }
 
   globalThis.FieldMapsOfflineMaps = { canonicalizeOsTileUrl, enumerateTiles, zoomPolicy, routeBounds,
-    matchingPack, render, renderRoute, preferredRoutePack, routePacks, cancel, CACHE_PREFIX, TILE_LIMIT, ROUTE_PADDING_METERS };
+    matchingPack, visibleAreaBounds, formatSize, packPresentation, render, renderCurrentArea, renderRoute,
+    preferredRoutePack, routePacks, cancel, CACHE_PREFIX, TILE_LIMIT, ROUTE_PADDING_METERS };
 })();

@@ -6,7 +6,8 @@ const proj4 = require('../vendor/proj4/proj4.js');
 const sandbox = { URL, globalThis: null };
 sandbox.globalThis = sandbox;
 vm.runInNewContext(fs.readFileSync('js/offline-maps.js', 'utf8'), sandbox);
-const { canonicalizeOsTileUrl, enumerateTiles, zoomPolicy, routeBounds, matchingPack, TILE_LIMIT } = sandbox.FieldMapsOfflineMaps;
+const { canonicalizeOsTileUrl, enumerateTiles, zoomPolicy, routeBounds, matchingPack,
+  visibleAreaBounds, packPresentation, formatSize, TILE_LIMIT } = sandbox.FieldMapsOfflineMaps;
 
 const tile = 'https://api.os.uk/maps/raster/v1/zxy/Outdoor_27700/9/123/456.png';
 assert.equal(canonicalizeOsTileUrl(tile + '?key=first'), tile);
@@ -71,4 +72,29 @@ assert.equal(matchingPack([pack], { ...selection, name: 'New route name' }), pac
 assert.equal(matchingPack([pack], { ...selection, layer: 'Road_27700' }), undefined);
 assert.equal(matchingPack([pack], { ...selection, maxZoom: 10 }), undefined);
 assert.equal(matchingPack([pack], { ...selection, bounds: { ...routeArea, west: routeArea.west - 0.001 } }), undefined);
+const visible = visibleAreaBounds({ lat: 53.01, lng: -2.01 }, { lat: 52.99, lng: -1.99 });
+assert.deepEqual(JSON.parse(JSON.stringify(visible)), { west: -2.01, east: -1.99, south: 52.99, north: 53.01 });
+assert(enumerateTiles(visible, 5, 9, bngCrs, 256).length > 0);
+assert.throws(() => visibleAreaBounds({ lat: 53, lng: -2 }, { lat: 53, lng: -2 }));
+const areaPack = { ...selection, sourceRouteId: undefined, name: 'Offline area — Outdoor', status: 'complete', detailPreset: 'standard' };
+assert.equal(matchingPack([areaPack], { ...areaPack, sourceRouteId: null }), areaPack);
+assert.equal(matchingPack([areaPack], { ...areaPack, bounds: { ...routeArea, east: routeArea.east + 0.001 } }), undefined);
+assert.equal(packPresentation({ ...pack, status: 'complete' }, [{ id: 'stable-id', name: 'Renamed' }]).name, 'Renamed');
+assert.equal(packPresentation(pack, []).annotation, 'Route deleted');
+assert.equal(packPresentation(areaPack, []).annotation, '');
+assert.equal(packPresentation({ ...areaPack, detailPreset: undefined, maxZoom: 10 }, []).detail, 'Detailed');
+assert.equal(packPresentation({ ...pack, status: 'incomplete' }, []).complete, false);
+const route = { id: 'stable-id', name: 'Current' };
+assert.equal(packPresentation(pack, [route], () => routeArea).annotation, '');
+assert.equal(packPresentation(pack, [route], () => ({ ...routeArea, west: routeArea.west - 0.001 })).annotation, 'Route changed');
+assert.equal(formatSize(12), '12 bytes');
+assert.equal(formatSize(1024), '1 KB');
+assert.equal(formatSize(1024 ** 2), '1 MB');
+assert.equal(formatSize(1024 ** 3), '1 GB');
+const pwaSandbox = { CONFIG: { apiKey: '', orsApiKey: '' },
+  document: { getElementById: () => null }, navigator: {}, window: { addEventListener() {} } };
+vm.runInNewContext(fs.readFileSync('js/pwa.js', 'utf8'), pwaSandbox);
+assert.equal(pwaSandbox.window.FieldMapsPwa.shouldOfferConfigReload(false, true), false);
+assert.equal(pwaSandbox.window.FieldMapsPwa.shouldOfferConfigReload(true, false), false);
+assert.equal(pwaSandbox.window.FieldMapsPwa.shouldOfferConfigReload(true, true), true);
 console.log('offline-maps tests passed');
