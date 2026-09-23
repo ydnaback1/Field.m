@@ -1552,6 +1552,15 @@ select {
 .offline-pack-row { margin: 10px 0; }
 .offline-pack-row .secondary-action { margin: 4px 6px 0 0; }
 #offline-cancel[hidden] { display: none; }
+.offline-route-preview dl { margin: 0 0 12px; }
+.offline-route-preview dl > div { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border-subtle); }
+.offline-route-preview dt { color: var(--muted-text); font-size: 0.85rem; }
+.offline-route-preview dd { margin: 0; min-width: 0; }
+.offline-route-preview select { width: 100%; min-height: 42px; padding: 7px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--panel-bg); color: var(--panel-text); font: inherit; }
+.offline-route-preview label { display: inline-flex; align-items: center; gap: 4px; min-height: 42px; margin-right: 12px; }
+.offline-route-preview label[hidden] { display: none; }
+.offline-route-preview input { accent-color: var(--accent-strong); }
+.offline-route-preview .route-actions-row { gap: 8px; }
 
 .route-more-actions summary {
   min-height: 44px;

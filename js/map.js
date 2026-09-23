@@ -1515,6 +1515,18 @@ function openRouteFromLibrary(mode, index) {
   clearRouteComparison();
   if ((window.currentMode || 'uk') !== mode && !window.switchMap(mode)) return;
   if (!window.loadRouteByIndex(mode, index)) return;
+  if (mode === 'uk' && navigator.onLine === false) {
+    const routeId = window.getRouteList('uk')[index]?.id;
+    if (routeId) window.FieldMapsOfflineMaps.preferredRoutePack(routeId).then(pack => {
+      if (!pack || window.currentRouteIndex.uk !== index || (window.currentMode || 'uk') !== 'uk') return;
+      const chosen = { Road_27700: 'OS Road', Outdoor_27700: 'OS Outdoor', Leisure_27700: 'OS Leisure' }[pack.layer];
+      const layer = ukBaseLayers[chosen];
+      if (layer && !mapUK.hasLayer(layer)) {
+        Object.values(ukBaseLayers).forEach(base => mapUK.removeLayer(base));
+        layer.addTo(mapUK);
+      }
+    }).catch(() => { /* Offline pack metadata may be unavailable; route opening still works. */ });
+  }
   panelView = 'details';
   drawingMode = false;
   editingMode = false;
@@ -1961,9 +1973,9 @@ function showSettings() {
       <button id="open-data-storage" class="secondary-action" type="button"><i class="fa-solid fa-database" aria-hidden="true"></i> Route backup &amp; storage</button>
     </section>
     <section class="route-backup-section" aria-labelledby="settings-offline-title">
-      <h3 id="settings-offline-title">Offline maps (Test)</h3>
-      <p>Download a small OS Outdoor area on the UK map.</p>
-      <button id="open-offline-maps" class="secondary-action" type="button">Open offline maps test</button>
+      <h3 id="settings-offline-title">Offline maps</h3>
+      <p>View, resume, or delete stored route maps.</p>
+      <button id="open-offline-maps" class="secondary-action" type="button">View offline maps</button>
     </section>`;
   panelContent.querySelector('#open-measure-tool').onclick = function() {
     setRoutePanelOpen(false);
@@ -2803,6 +2815,7 @@ function showActiveRouteDetails(context) {
       <div class="secondary-actions-row">
         <button class="secondary-action" id="add-route-panel" type="button"><i class="fa-solid fa-plus" aria-hidden="true"></i> New route</button>
         <button class="secondary-action" id="rename-route-panel" type="button"><i class="fa-solid fa-i-cursor" aria-hidden="true"></i> Rename</button>
+        ${context.mode === 'uk' && currentRoute.id && hasValidRouteCoordinates(currentRoute.geojson) ? '<button class="secondary-action" id="offline-route-panel" type="button"><i class="fa-solid fa-map" aria-hidden="true"></i> Download offline map</button>' : ''}
         ${!(currentRoute.routing && currentRoute.routing.provider === 'ors' && currentRoute.routing.profile === 'foot-hiking') ? '<button class="secondary-action" id="snap-route-panel" type="button"><i class="fa-solid fa-route" aria-hidden="true"></i> Snap route to paths</button>' : ''}
         <button class="secondary-action" id="share-route-panel" type="button"><i class="fa-solid fa-link" aria-hidden="true"></i> Share</button>
         <button class="secondary-action" id="export-geojson-panel" type="button"><i class="fa-solid fa-file-code" aria-hidden="true"></i> GeoJSON</button>
@@ -2958,6 +2971,15 @@ function showActiveRouteDetails(context) {
       updateRouteFabLabel();
     };
   } else {
+    const offlineRouteButton = panelContent.querySelector('#offline-route-panel');
+    if (offlineRouteButton) {
+      offlineRouteButton.onclick = function() { panelView = 'offline-route'; showRoutePanelContent(); };
+      window.FieldMapsOfflineMaps.routePacks(currentRoute.id).then(packs => {
+        if (!offlineRouteButton.isConnected) return;
+        if (packs.some(pack => pack.status === 'complete')) offlineRouteButton.innerHTML = '<i class="fa-solid fa-map" aria-hidden="true"></i> Offline map ✓';
+        else if (packs.length) offlineRouteButton.innerHTML = '<i class="fa-solid fa-map" aria-hidden="true"></i> Resume offline map';
+      }).catch(() => {});
+    }
     panelContent.querySelector('#rename-route-panel').onclick = function() {
       renamingRoute = true;
       routePanelNotice = '';
@@ -3040,14 +3062,29 @@ function showRoutePanelContent() {
   if (panelView === 'offline') {
     panelContent.className = 'route-detail-content route-backup-content settings-content';
     window.FieldMapsOfflineMaps.render(panelContent, {
-      mode: () => currentMode,
-      isOutdoor: () => mapUK.hasLayer(ukBaseLayers['OS Outdoor']),
-      bounds: () => mapUK.getBounds(),
       crs: mapUK.options.crs,
-      layer: ukBaseLayers['OS Outdoor'],
+      layers: { Road_27700: ukBaseLayers['OS Road'], Outdoor_27700: ukBaseLayers['OS Outdoor'], Leisure_27700: ukBaseLayers['OS Leisure'] },
       hasKey: () => Boolean(CONFIG.apiKey),
-      tileSize: ukBaseLayers['OS Outdoor'].getTileSize().x,
       back: () => { panelView = 'settings'; showRoutePanelContent(); }
+    });
+    return;
+  }
+  if (panelView === 'offline-route' && context) {
+    panelContent.className = 'route-detail-content route-backup-content';
+    window.FieldMapsOfflineMaps.renderRoute(panelContent, {
+      route: context.route,
+      routeExists: () => window.getRouteList('uk').some(route => route?.id === context.route.id),
+      defaultLayer: mapUK.hasLayer(ukBaseLayers['OS Road']) ? 'Road_27700' :
+        mapUK.hasLayer(ukBaseLayers['OS Leisure']) ? 'Leisure_27700' : 'Outdoor_27700',
+      layers: { Road_27700: ukBaseLayers['OS Road'], Outdoor_27700: ukBaseLayers['OS Outdoor'], Leisure_27700: ukBaseLayers['OS Leisure'] },
+      crs: mapUK.options.crs,
+      isValid: hasValidRouteCoordinates,
+      coordinates: routeLineCoordinates,
+      project: point => proj4('EPSG:4326', 'EPSG:27700', point),
+      unproject: point => proj4('EPSG:27700', 'EPSG:4326', point),
+      hasKey: () => Boolean(CONFIG.apiKey),
+      back: () => { panelView = 'details'; showRoutePanelContent(); },
+      viewStatus: () => { panelView = 'offline'; showRoutePanelContent(); }
     });
     return;
   }
