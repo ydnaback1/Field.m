@@ -2,6 +2,10 @@
   const CACHE_PREFIX = "field-maps-app-";
   const updateNotice = document.getElementById("app-update-notice");
   const updateNowButton = document.getElementById("app-update-now");
+  const recoveryNotice = document.getElementById("connection-restored-notice");
+  const recoveryReload = document.getElementById("connection-restored-reload");
+  const bootedWithoutRuntimeConfig = !(CONFIG.apiKey && CONFIG.orsApiKey);
+  let connectionRestored = false;
   let registrationPromise = null;
   let reloadForUpdate = false;
 
@@ -12,6 +16,15 @@
   function showWaitingWorker(registration) {
     if (!updateNotice) return;
     updateNotice.hidden = !registration.waiting;
+    showConnectionRecovery();
+  }
+
+  function shouldOfferConfigReload(missingAtBoot, onlineEvent) {
+    return Boolean(missingAtBoot && onlineEvent);
+  }
+
+  function showConnectionRecovery() {
+    if (recoveryNotice) recoveryNotice.hidden = !connectionRestored || !updateNotice?.hidden;
   }
 
   function watchRegistration(registration) {
@@ -124,6 +137,15 @@
   }
 
   updateNowButton?.addEventListener("click", activateWaitingUpdate);
+  window.addEventListener("online", () => {
+    if (!shouldOfferConfigReload(bootedWithoutRuntimeConfig, true)) return;
+    connectionRestored = true;
+    showConnectionRecovery();
+  });
+  recoveryReload?.addEventListener("click", () => {
+    if (window.FieldMapsHasLiveSession?.() && !window.confirm("Reloading will end your live recording or navigation session. Reload now?")) return;
+    window.location.reload();
+  });
   window.addEventListener("load", () => {
     requestPersistentStorage();
     registerWorker();
@@ -134,5 +156,6 @@
     getBuildInfo,
     checkForUpdates,
     refreshAppFiles,
+    shouldOfferConfigReload,
   };
 })();

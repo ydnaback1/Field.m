@@ -195,6 +195,7 @@ let selectedAnnotationId = null;
 let navigation = null;
 let navigationSummary = null;
 let trackRecording = null;
+window.FieldMapsHasLiveSession = () => Boolean(navigation || trackRecording);
 let trackSummary = null;
 let confirmingTrackDiscard = false;
 let navigationWakeLock = null;
@@ -1006,6 +1007,27 @@ function getNavigationUsableMapPoint(mode) {
     Math.max(0, (visibleRight - mapRect.left) / 2),
     Math.max(0, (visibleBottom - mapRect.top) / 2)
   );
+}
+
+function getOfflineCurrentAreaBounds() {
+  if ((window.currentMode || 'uk') !== 'uk') throw new Error('Switch to the UK map to download the current area.');
+  const point = getNavigationUsableMapPoint('uk');
+  const topLeft = mapUK.containerPointToLatLng([0, 0]);
+  const bottomRight = mapUK.containerPointToLatLng([point.x * 2, point.y * 2]);
+  return window.FieldMapsOfflineMaps.visibleAreaBounds(topLeft, bottomRight);
+}
+
+function viewOfflinePack(pack) {
+  if ((window.currentMode || 'uk') !== 'uk' && !window.switchMap('uk')) return;
+  const layer = { Road_27700: ukBaseLayers['OS Road'], Outdoor_27700: ukBaseLayers['OS Outdoor'],
+    Leisure_27700: ukBaseLayers['OS Leisure'] }[pack.layer];
+  if (!layer || !pack.bounds) return;
+  Object.values(ukBaseLayers).forEach(base => mapUK.removeLayer(base));
+  layer.addTo(mapUK);
+  panelView = 'library';
+  setRoutePanelOpen(false);
+  mapUK.invalidateSize();
+  mapUK.fitBounds([[pack.bounds.south, pack.bounds.west], [pack.bounds.north, pack.bounds.east]], getRouteFitOptions());
 }
 
 function followNavigationPosition() {
@@ -1974,7 +1996,7 @@ function showSettings() {
     </section>
     <section class="route-backup-section" aria-labelledby="settings-offline-title">
       <h3 id="settings-offline-title">Offline maps</h3>
-      <p>View, resume, or delete stored route maps.</p>
+      <p>Download the visible UK area, or manage stored maps.</p>
       <button id="open-offline-maps" class="secondary-action" type="button">View offline maps</button>
     </section>`;
   panelContent.querySelector('#open-measure-tool').onclick = function() {
@@ -3065,7 +3087,30 @@ function showRoutePanelContent() {
       crs: mapUK.options.crs,
       layers: { Road_27700: ukBaseLayers['OS Road'], Outdoor_27700: ukBaseLayers['OS Outdoor'], Leisure_27700: ukBaseLayers['OS Leisure'] },
       hasKey: () => Boolean(CONFIG.apiKey),
+      routes: () => window.getRouteList('uk'),
+      routeBounds: route => window.FieldMapsOfflineMaps.routeBounds(routeLineCoordinates(route.geojson),
+        point => proj4('EPSG:4326', 'EPSG:27700', point), point => proj4('EPSG:27700', 'EPSG:4326', point)),
+      currentArea: () => {
+        if ((window.currentMode || 'uk') !== 'uk') {
+          if (!window.switchMap('uk')) return;
+          setRoutePanelOpen(true);
+        }
+        panelView = 'offline-area'; showRoutePanelContent();
+      },
+      view: viewOfflinePack,
       back: () => { panelView = 'settings'; showRoutePanelContent(); }
+    });
+    return;
+  }
+  if (panelView === 'offline-area') {
+    panelContent.className = 'route-detail-content route-backup-content settings-content';
+    window.FieldMapsOfflineMaps.renderCurrentArea(panelContent, {
+      crs: mapUK.options.crs,
+      layers: { Road_27700: ukBaseLayers['OS Road'], Outdoor_27700: ukBaseLayers['OS Outdoor'], Leisure_27700: ukBaseLayers['OS Leisure'] },
+      defaultLayer: mapUK.hasLayer(ukBaseLayers['OS Road']) ? 'Road_27700' :
+        mapUK.hasLayer(ukBaseLayers['OS Leisure']) ? 'Leisure_27700' : 'Outdoor_27700',
+      hasKey: () => Boolean(CONFIG.apiKey), currentBounds: getOfflineCurrentAreaBounds, view: viewOfflinePack,
+      back: () => { panelView = 'offline'; showRoutePanelContent(); }
     });
     return;
   }
