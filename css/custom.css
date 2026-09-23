@@ -1549,6 +1549,10 @@ select {
 }
 
 .route-disclosure summary,
+.offline-pack-row { margin: 10px 0; }
+.offline-pack-row .secondary-action { margin: 4px 6px 0 0; }
+#offline-cancel[hidden] { display: none; }
+
 .route-more-actions summary {
   min-height: 44px;
   display: flex;
