@@ -6,7 +6,7 @@ const APP_ASSETS = [
   "./",
   "index.html",
   "manifest.webmanifest",
-  "explore_24dp_FILL0_wght400_GRAD0_opsz24.svg",
+  "icons/field-maps-icon.svg",
   "icons/field-maps-192.png",
   "icons/field-maps-512.png",
   "icons/field-maps-maskable.svg",

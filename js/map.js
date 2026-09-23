@@ -1998,7 +1998,12 @@ function showSettings() {
       <h3 id="settings-offline-title">Offline maps</h3>
       <p>Download the visible UK area, or manage stored maps.</p>
       <button id="open-offline-maps" class="secondary-action" type="button">View offline maps</button>
-    </section>`;
+    </section>
+    ${window.FieldMapsPwa?.canInstall() ? `<section class="route-backup-section" aria-labelledby="settings-install-title">
+      <h3 id="settings-install-title">Install Field Maps</h3>
+      <p>Install this app on your device.</p>
+      <button id="settings-install-app" class="secondary-action" type="button">Install</button>
+    </section>` : ''}`;
   panelContent.querySelector('#open-measure-tool').onclick = function() {
     setRoutePanelOpen(false);
     window.openMeasureTool?.();
@@ -2012,7 +2017,13 @@ function showSettings() {
     panelView = 'offline';
     showRoutePanelContent();
   };
+  const settingsInstall = panelContent.querySelector('#settings-install-app');
+  if (settingsInstall) settingsInstall.onclick = () => window.FieldMapsPwa.promptInstall();
 }
+
+window.addEventListener('fieldmapsinstallchange', () => {
+  if (panelView === 'settings' && panel.classList.contains('open')) showSettings();
+});
 
 function startRouteDrawing() {
   clearRouteComparison();

@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#171a20" />
   <title>Field Maps</title>
-  <link rel="icon" type="image/svg+xml" href="explore_24dp_FILL0_wght400_GRAD0_opsz24.svg" />
+  <link rel="icon" type="image/svg+xml" href="icons/field-maps-icon.svg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/field-maps-192.png" />
+  <link rel="apple-touch-icon" href="icons/field-maps-192.png" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
   <link rel="stylesheet" href="vendor/leaflet-locatecontrol/L.Control.Locate.min.css" />
@@ -25,6 +27,13 @@
   <aside id="connection-restored-notice" class="app-update-notice connection-restored-notice" role="status" hidden>
     <span>Connection restored<br><small>Reload Field Maps to restore online maps, search and routing.</small></span>
     <button id="connection-restored-reload" type="button">Reload</button>
+  </aside>
+  <aside id="app-install-notice" class="app-update-notice app-install-notice" role="status" hidden>
+    <span>Install Field Maps<small>Keep routes and offline maps handy and launch Field Maps like an app.</small></span>
+    <div class="app-install-actions">
+      <button id="app-install-now" type="button">Install</button>
+      <button id="app-install-dismiss" class="app-install-dismiss" type="button">Not now</button>
+    </div>
   </aside>
 
   <script src="vendor/leaflet/leaflet.js"></script>

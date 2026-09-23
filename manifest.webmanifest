@@ -1,6 +1,7 @@
 {
   "name": "Field Maps",
   "short_name": "Field Maps",
+  "description": "Plan, save and follow walking routes with OS mapping in the UK. Download maps for offline use and record your walks.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -9,7 +10,7 @@
   "background_color": "#eef1f4",
   "icons": [
     {
-      "src": "explore_24dp_FILL0_wght400_GRAD0_opsz24.svg",
+      "src": "icons/field-maps-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
